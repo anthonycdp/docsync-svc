@@ -369,57 +369,104 @@ class ProposalExtractor(LoggerMixin):
                                  extracted_color=vehicle.color)
                 break
         
-        # CKDEV-NOTE: Additional patterns for edge cases before PyMuPDF fallback
+        # CKDEV-NOTE: Additional patterns for edge cases - enhanced for production compatibility
         if not vehicle.color:
-            additional_patterns = [
-                # Try searching in the full text for standalone color words near vehicle info
-                rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}.*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE).*?\d{{1,3}}\.\d{{3}},\d{{2}}',
-                # Color followed by value pattern
-                r'(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s*\d{1,3}\.\d{3},\d{2}',
-                # Look for color in vehicle description without specific format
-                r'TRACKER[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
-                # Pattern for when color appears between model and automatic/flex
-                r'TURBO[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)[^A-Z]*?(?:AUTOMATIC|FLEX)',
-            ]
+            # Try parsing the raw pdfplumber text differently for table-based layouts
+            table_sections = section_text.split('\n')
             
-            for additional_pattern in additional_patterns:
-                color_match = re.search(additional_pattern, section_text, re.IGNORECASE)
-                if color_match:
-                    vehicle.color = color_match.group(1).upper().strip()
-                    self.log_operation("_extract_vehicle_data", 
-                                     action="color_extracted_additional", 
-                                     pattern_used=additional_pattern[:50] + "..." if len(additional_pattern) > 50 else additional_pattern,
-                                     extracted_color=vehicle.color)
-                    break
-        
-        # CKDEV-NOTE: PyMuPDF fallback crucial for table-based PDFs where pdfplumber fails
-        if not vehicle.color and pdf_path and PYMUPDF_AVAILABLE:
-            try:
-                doc = fitz.open(pdf_path)
-                pymupdf_text = ""
-                for page_num in range(len(doc)):
-                    page = doc.load_page(page_num)
-                    pymupdf_text += page.get_text() + "\n"
-                doc.close()
+            # Look for table headers and try to extract color from structured data
+            for i, line in enumerate(table_sections):
+                line_clean = line.strip().upper()
                 
-                pymupdf_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', pymupdf_text, re.DOTALL | re.IGNORECASE)
-                if pymupdf_section:
-                    pymupdf_section_text = pymupdf_section.group(0)
+                # If we find a line with common table headers
+                if any(header in line_clean for header in ['PLACA', 'MODELO', 'COR', 'VALOR']):
+                    # Look in subsequent lines for color values
+                    for j in range(i + 1, min(i + 10, len(table_sections))):
+                        next_line = table_sections[j].strip().upper()
+                        
+                        # Check if this line contains color information
+                        color_words = ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
+                                     'CINZA', 'CINZENTO', 'DOURADO', 'VERDE', 'AMARELO', 
+                                     'BEGE', 'GRAFITE', 'AZUL TITAN']
+                        
+                        for color in color_words:
+                            if color in next_line:
+                                # Check if this looks like vehicle data (has plate or value pattern)
+                                if (vehicle.plate and vehicle.plate in next_line) or re.search(r'\d{1,3}\.\d{3},\d{2}', next_line):
+                                    vehicle.color = color
+                                    self.log_operation("_extract_vehicle_data", 
+                                                     action="color_extracted_table_parsing", 
+                                                     line_content=next_line[:50],
+                                                     extracted_color=vehicle.color)
+                                    break
+                                # Or if the line only contains color and value
+                                elif re.match(f'^{color}\\s*\\d{{1,3}}\\.\\d{{3}},\\d{{2}}', next_line):
+                                    vehicle.color = color
+                                    self.log_operation("_extract_vehicle_data", 
+                                                     action="color_extracted_value_pattern", 
+                                                     line_content=next_line[:50],
+                                                     extracted_color=vehicle.color)
+                                    break
+                        
+                        if vehicle.color:
+                            break
                     
-                    # CKDEV-NOTE: Try horizontal pattern first (for traditional layouts)
-                    color_pattern_horizontal = r'Cor\s+(?!VALOR)([A-Z\s]+?)(?:\s+Valor|\s+Fab/Mod|\s+Avaliação|\s+\d{1,3}\.\d{3},\d{2}|\n)'
-                    pymupdf_color_match = re.search(color_pattern_horizontal, pymupdf_section_text, re.IGNORECASE)
-                    if pymupdf_color_match:
-                        extracted_color = pymupdf_color_match.group(1).upper().strip()
-                        if extracted_color not in ['VALOR', 'FAB/MOD', 'CHASSI', 'AVALIACAO', 'COMB', 'KM']:
-                            vehicle.color = extracted_color
+                    if vehicle.color:
+                        break
+            
+            # Additional fallback patterns for edge cases
+            if not vehicle.color:
+                additional_patterns = [
+                    # Try searching in the full text for standalone color words near vehicle info
+                    rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}.*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN).*?\d{{1,3}}\.\d{{3}},\d{{2}}',
+                    # Color followed by value pattern in messy text
+                    r'(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)\s*\d{1,3}\.\d{3},\d{2}',
+                    # Look for color in vehicle description without specific format
+                    r'TRACKER[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)',
+                    # Pattern for when color appears between model and automatic/flex
+                    r'TURBO[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)[^A-Z]*?(?:AUTOMATIC|FLEX)',
+                    # Pattern for corrupted OCR where FLEX becomes FLEXP and color gets merged
+                    r'FLEXP[^A-Z]*?RPERTEOMIER[^A-Z]*?AUTOMATIC[^A-Z]*?(\d{1,3}\.\d{3},\d{2})',
+                ]
+                
+                for additional_pattern in additional_patterns:
+                    color_match = re.search(additional_pattern, section_text, re.IGNORECASE)
+                    if color_match:
+                        vehicle.color = color_match.group(1).upper().strip()
+                        self.log_operation("_extract_vehicle_data", 
+                                         action="color_extracted_additional", 
+                                         pattern_used=additional_pattern[:50] + "..." if len(additional_pattern) > 50 else additional_pattern,
+                                         extracted_color=vehicle.color)
+                        break
+        
+        # CKDEV-NOTE: OCR fallback for table-based PDFs where pdfplumber fails to extract color
+        if not vehicle.color and pdf_path and OCR_AVAILABLE:
+            try:
+                self.log_operation("_extract_vehicle_data", 
+                                 action="attempting_ocr_fallback_for_color", 
+                                 reason="color_not_found_in_pdfplumber_text")
+                
+                ocr_text = self._extract_text_with_ocr(pdf_path)
+                
+                # Find used vehicle section in OCR text
+                ocr_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', ocr_text, re.DOTALL | re.IGNORECASE)
+                if ocr_section:
+                    ocr_section_text = ocr_section.group(0)
+                    
+                    # Try the same color patterns on OCR text
+                    for pattern in color_patterns:
+                        color_match = re.search(pattern, ocr_section_text, re.IGNORECASE | re.MULTILINE)
+                        if color_match:
+                            vehicle.color = color_match.group(1).upper().strip()
                             self.log_operation("_extract_vehicle_data", 
-                                             action="color_extracted_pymupdf_horizontal", 
+                                             action="color_extracted_ocr", 
+                                             pattern_used=pattern[:50] + "..." if len(pattern) > 50 else pattern,
                                              extracted_color=vehicle.color)
-
-                    # CKDEV-NOTE: Vertical search for table-based PDFs (primary solution for this issue)
+                            break
+                    
+                    # If still not found, try line-by-line analysis on OCR text
                     if not vehicle.color:
-                        lines = pymupdf_section_text.split('\n')
+                        lines = ocr_section_text.split('\n')
                         valid_colors = [
                             'PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
                             'CINZA', 'CINZENTO', 'DOURADO', 'OURO', 'VERDE', 'AMARELO', 
@@ -431,28 +478,35 @@ class ProposalExtractor(LoggerMixin):
                         
                         for line in lines:
                             line_clean = line.strip().upper()
-                            # Direct match
-                            if line_clean in valid_colors:
-                                vehicle.color = line_clean
-                                self.log_operation("_extract_vehicle_data", 
-                                                 action="color_extracted_pymupdf_vertical_direct", 
-                                                 extracted_color=vehicle.color)
-                                break
                             
-                            # Partial match for compound colors
+                            # Look for color words in lines that contain vehicle data
                             for color in valid_colors:
-                                if line_clean.startswith(color) and len(line_clean) <= len(color) + 10:
-                                    vehicle.color = line_clean
-                                    self.log_operation("_extract_vehicle_data", 
-                                                     action="color_extracted_pymupdf_vertical_partial", 
-                                                     extracted_color=vehicle.color)
-                                    break
+                                if color in line_clean:
+                                    # Verify this line contains vehicle information
+                                    if (vehicle.plate and vehicle.plate in line_clean) or re.search(r'\d{1,3}[.,]\d{3}[.,]\d{2}', line_clean):
+                                        vehicle.color = color
+                                        self.log_operation("_extract_vehicle_data", 
+                                                         action="color_extracted_ocr_line_analysis", 
+                                                         line_content=line_clean[:80],
+                                                         extracted_color=vehicle.color)
+                                        break
                             
                             if vehicle.color:
                                 break
-                            
+                        
+                        # Final attempt: look for standalone color lines
+                        if not vehicle.color:
+                            for line in lines:
+                                line_clean = line.strip().upper()
+                                if line_clean in valid_colors:
+                                    vehicle.color = line_clean
+                                    self.log_operation("_extract_vehicle_data", 
+                                                     action="color_extracted_ocr_standalone", 
+                                                     extracted_color=vehicle.color)
+                                    break
+                
             except Exception as e:
-                self.log_error(e, "_extract_vehicle_data", context="pymupdf_fallback")
+                self.log_error(e, "_extract_vehicle_data", context="ocr_fallback_for_color")
                 pass
         
         # CKDEV-NOTE: Log quando cor não é extraída para debug

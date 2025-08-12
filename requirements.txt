@@ -18,8 +18,11 @@ pdf2image==1.17.0
 
 # Document Processing
 python-docx==1.1.2
-docx2pdf==0.1.8
+docx2pdf==0.1.8; sys_platform == "win32"  # Windows only - requires MS Office
 pywin32>=306; sys_platform == "win32"
+
+# Cross-platform PDF Generation (LibreOffice alternative)
+reportlab==4.2.2
 
 # Image Processing
 Pillow==10.4.0

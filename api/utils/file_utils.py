@@ -215,6 +215,42 @@ class FileManager:
                 return ext == '.docx'
             
             return ext in FileManager.ALLOWED_EXTENSIONS
+    
+    @staticmethod
+    def determine_content_type(filename: str) -> str:
+        if not filename:
+            return 'application/octet-stream'
+        
+        ext = os.path.splitext(filename.lower())[1]
+        
+        content_type_mapping = {
+            '.pdf': 'application/pdf',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.doc': 'application/msword'
+        }
+        
+        return content_type_mapping.get(ext, 'application/octet-stream')
+    
+    @staticmethod
+    def get_file_type(filename: str) -> str:
+        if not filename:
+            return 'unknown'
+        
+        ext = os.path.splitext(filename.lower())[1]
+        
+        type_mapping = {
+            '.pdf': 'document',
+            '.jpg': 'image',
+            '.jpeg': 'image',
+            '.png': 'image',
+            '.docx': 'document',
+            '.doc': 'document'
+        }
+        
+        return type_mapping.get(ext, 'unknown')
 
 
 class TemporaryFileManager:

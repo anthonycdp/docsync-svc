@@ -140,11 +140,11 @@ class ThirdPartyPaymentProcessor(LoggerMixin):
             
             # CKDEV-NOTE: Adicionar conversão PDF usando a mesma lógica que funciona no MultiTemplateProcessor
             try:
-                from ..utils import convert_docx_to_pdf_libreoffice
+                from ..utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
             except ImportError:
-                from utils import convert_docx_to_pdf_libreoffice
+                from utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
             
-            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_libreoffice(output_path)
+            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_hybrid(output_path)
             if pdf_success:
                 self.log_info(f"PDF generated successfully: {pdf_path}")
             else:
@@ -383,11 +383,11 @@ class ThirdPartyPaymentProcessor(LoggerMixin):
             
             # CKDEV-NOTE: Adicionar conversão PDF usando a mesma lógica que funciona no MultiTemplateProcessor
             try:
-                from ..utils import convert_docx_to_pdf_libreoffice
+                from ..utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
             except ImportError:
-                from utils import convert_docx_to_pdf_libreoffice
+                from utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
             
-            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_libreoffice(output_path)
+            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_hybrid(output_path)
             if pdf_success:
                 self.log_info(f"PDF generated successfully: {pdf_path}")
             else:

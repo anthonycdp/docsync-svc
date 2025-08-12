@@ -43,20 +43,42 @@ def create_document_controller(
             if not TemplateHelper.validate_template_type(template_type):
                 return ResponseBuilder.error("Invalid template type"), 400
             
-            upload_results = file_service.upload_files(files)
-            file_paths = [result['file_path'] for result in upload_results]
+            try:
+                upload_results = file_service.upload_files(files)
+                file_paths = [result['file_path'] for result in upload_results]
+                main_pdf_path = file_paths[0]
+                logger.info(f"File uploaded successfully: {main_pdf_path}")
+            except Exception as upload_error:
+                logger.error(f"File upload failed: {upload_error}")
+                return ResponseBuilder.error(f"File upload failed: {str(upload_error)}"), 400
             
-            main_pdf_path = file_paths[0]
+            try:
+                import sys
+                from pathlib import Path
+                backend_root = Path(__file__).parent.parent.parent
+                if str(backend_root) not in sys.path:
+                    sys.path.insert(0, str(backend_root))
+                logger.info(f"Backend root: {backend_root}")
+            except Exception as path_error:
+                logger.error(f"Path setup failed: {path_error}")
+                return ResponseBuilder.error(f"Path setup failed: {str(path_error)}"), 500
             
-            import sys
-            from pathlib import Path
-            backend_root = Path(__file__).parent.parent.parent
-            if str(backend_root) not in sys.path:
-                sys.path.insert(0, str(backend_root))
-            from extractors import PDFDataExtractor
-            pdf_extractor = PDFDataExtractor()
+            try:
+                from extractors import PDFDataExtractor
+                pdf_extractor = PDFDataExtractor()
+                logger.info("PDF Extractor initialized successfully")
+            except Exception as extractor_error:
+                logger.error(f"Extractor initialization failed: {extractor_error}")
+                return ResponseBuilder.error(f"Extractor init failed: {str(extractor_error)}"), 500
             
-            extracted_data = pdf_extractor.extract_data(main_pdf_path)
+            try:
+                extracted_data = pdf_extractor.extract_data(main_pdf_path)
+                logger.info("Data extraction completed successfully")
+            except Exception as extraction_error:
+                logger.error(f"Data extraction failed: {extraction_error}")
+                import traceback
+                logger.error(f"Extraction traceback: {traceback.format_exc()}")
+                return ResponseBuilder.error(f"Data extraction failed: {str(extraction_error)}"), 422
             
             if template_type in ['cessao_credito', 'pagamento_terceiro'] and len(file_paths) >= 3:
                 cnh_file = file_paths[1]

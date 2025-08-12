@@ -72,12 +72,23 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
                         logger.warning(f"Empty PDF file detected: {filename}")
                         return ResponseBuilder.error("PDF file is empty"), 404
                     
-                    # CKDEV-NOTE: Validate PDF header
+                    if file_size < 100:  # PDF files should be at least 100 bytes
+                        logger.warning(f"PDF file too small ({file_size} bytes): {filename}")
+                        return ResponseBuilder.error("PDF file appears corrupted (too small)"), 404
+                    
+                    # CKDEV-NOTE: Validate PDF header and structure
                     with open(file_path, 'rb') as f:
                         header = f.read(4)
                         if header != b'%PDF':
                             logger.warning(f"Invalid PDF header in file: {filename}")
-                            return ResponseBuilder.error("Invalid PDF file"), 404
+                            return ResponseBuilder.error("Invalid PDF file format"), 404
+                        
+                        # CKDEV-NOTE: Basic validation of PDF structure
+                        f.seek(0)
+                        first_line = f.readline().decode('utf-8', errors='ignore')
+                        if not first_line.startswith('%PDF-'):
+                            logger.warning(f"Malformed PDF first line in file: {filename}")
+                            return ResponseBuilder.error("Malformed PDF file"), 404
                     
                     logger.info(f"PDF validation successful: {filename} ({file_size} bytes)")
                 except Exception as e:

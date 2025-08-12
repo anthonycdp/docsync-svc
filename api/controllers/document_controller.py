@@ -245,19 +245,25 @@ def create_document_controller(
             formats_available = ['docx']
             pdf_filename = None
             
-            # CKDEV-NOTE: Always try to generate PDF alongside DOCX with better error handling
+            # CKDEV-NOTE: Enhanced PDF generation with comprehensive validation
             try:
                 logger.info(f"Attempting PDF conversion from: {output_filename}")
                 pdf_path = pdf_service.convert_docx_to_pdf(output_filename)
-                if pdf_path and pdf_path.exists() and pdf_path.stat().st_size > 0:
+                
+                # CKDEV-NOTE: Comprehensive PDF validation before marking as available
+                if pdf_path and _validate_pdf_file(pdf_path, logger):
                     pdf_filename = pdf_path.name
                     formats_available.append('pdf')
-                    logger.info(f"PDF generated successfully: {pdf_filename} ({pdf_path.stat().st_size} bytes)")
+                    logger.info(f"PDF generated and validated successfully: {pdf_filename} ({pdf_path.stat().st_size} bytes)")
                 else:
-                    logger.warning(f"PDF conversion failed or produced empty file. DOCX available: {output_filename.name}")
-                    # CKDEV-NOTE: Clean up empty PDF file if it exists
-                    if pdf_path and pdf_path.exists() and pdf_path.stat().st_size == 0:
-                        pdf_path.unlink()
+                    logger.warning(f"PDF conversion failed validation. DOCX available: {output_filename.name}")
+                    # CKDEV-NOTE: Clean up invalid PDF file if it exists
+                    if pdf_path and pdf_path.exists():
+                        try:
+                            pdf_path.unlink()
+                            logger.info(f"Removed invalid PDF file: {pdf_path.name}")
+                        except Exception as cleanup_error:
+                            logger.error(f"Failed to cleanup invalid PDF: {cleanup_error}")
             except Exception as e:
                 logger.error(f"PDF conversion failed during generation: {e}", exc_info=True)
                 logger.info(f"Document generation will continue with DOCX only: {output_filename.name}")
@@ -596,6 +602,63 @@ def create_document_controller(
             
             # CKDEV-NOTE: Re-raise exception to ensure it propagates properly
             raise
+    
+    def _validate_pdf_file(pdf_path, logger):
+        """
+        Validate PDF file for size, existence, and valid PDF header
+        
+        Args:
+            pdf_path: Path to PDF file
+            logger: Logger instance for logging validation results
+            
+        Returns:
+            bool: True if PDF is valid, False otherwise
+        """
+        try:
+            # CKDEV-NOTE: Check if file exists
+            if not pdf_path or not pdf_path.exists():
+                logger.warning(f"PDF validation failed: file does not exist at {pdf_path}")
+                return False
+            
+            # CKDEV-NOTE: Check file size (must be > 0 and reasonable)
+            file_size = pdf_path.stat().st_size
+            if file_size == 0:
+                logger.warning(f"PDF validation failed: empty file at {pdf_path}")
+                return False
+            
+            if file_size < 100:  # PDF files should be at least 100 bytes
+                logger.warning(f"PDF validation failed: file too small ({file_size} bytes) at {pdf_path}")
+                return False
+            
+            # CKDEV-NOTE: Validate PDF header
+            try:
+                with open(pdf_path, 'rb') as f:
+                    header = f.read(4)
+                    if header != b'%PDF':
+                        logger.warning(f"PDF validation failed: invalid PDF header '{header}' at {pdf_path}")
+                        return False
+            except Exception as header_error:
+                logger.error(f"PDF validation failed: cannot read header from {pdf_path}: {header_error}")
+                return False
+            
+            # CKDEV-NOTE: Additional validation - try to read file end
+            try:
+                with open(pdf_path, 'rb') as f:
+                    f.seek(-10, 2)  # Seek to last 10 bytes
+                    tail = f.read()
+                    if b'%%EOF' not in tail:
+                        logger.warning(f"PDF validation failed: missing EOF marker at {pdf_path}")
+                        return False
+            except Exception as tail_error:
+                logger.warning(f"PDF validation warning: cannot validate EOF marker at {pdf_path}: {tail_error}")
+                # Don't fail validation for this, as some PDFs might not have proper EOF
+            
+            logger.info(f"PDF validation successful: {pdf_path} ({file_size} bytes)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"PDF validation error for {pdf_path}: {e}")
+            return False
     
     
     return bp

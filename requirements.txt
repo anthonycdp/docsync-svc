@@ -1,38 +1,55 @@
-# DOC SYNC - Core Dependencies Only
+# DOC SYNC - Backend Dependencies
 # ========================================
 
 # Core Flask Web Framework
-Flask==3.0.0
-Werkzeug==3.0.1
-Flask-CORS==4.0.0
+Flask==3.0.3
+Werkzeug==3.0.3
+Flask-CORS==4.0.1
 
 # Background Scheduling
-APScheduler>=3.10.1
+APScheduler==3.10.4
 
 # PDF Processing and OCR
-pdfplumber==0.10.0
-pytesseract>=0.3.10
-pdf2image>=1.16.0
+pdfplumber==0.11.2
+PyPDF2==3.0.1
+pytesseract==0.3.10
+pdf2image==1.17.0
 
 # Document Processing
+python-docx==1.1.2
 docx2pdf==0.1.8
-python-docx>=0.8.11
 pywin32>=306; sys_platform == "win32"
 
-# Image Processing (required for OCR)
-Pillow>=9.0.0
+# Image Processing
+Pillow==10.4.0
+
+# Google Cloud Vision API (for OCR)
+google-cloud-vision==3.7.2
 
 # HTTP Client (for external APIs)
-requests==2.31.0
+requests==2.32.3
 
 # File Type Detection
 python-magic==0.4.27
 python-magic-bin==0.4.14; sys_platform == "win32"
 
 # Data Validation and Serialization
-marshmallow>=3.20.0
-python-dateutil==2.8.2
+marshmallow==3.21.3
+python-dateutil==2.9.0.post0
+
+# System Monitoring
+psutil==7.0.0
+
+# Environment Configuration
+python-dotenv==1.0.1
 
 # Utilities
-pathvalidate>=3.0.0
+pathvalidate==3.2.0
 colorama==0.4.6
+six==1.16.0
+
+# Development and Testing (optional)
+pytest==8.3.2
+pytest-cov==5.0.0
+black==24.4.2
+flake8==7.1.0

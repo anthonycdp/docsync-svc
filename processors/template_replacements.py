@@ -34,7 +34,8 @@ class TemplateReplacementManager:
             replacements['{{USED_VEHICLE_MODEL}}'] = data.vehicle.model or ''
             replacements['{{USED_VEHICLE_CHASSI}}'] = data.vehicle.chassis or ''
             replacements['{{USED_VEHICLE_CHASSIS}}'] = data.vehicle.chassis or ''
-            replacements['{{USED_VEHICLE_COLOR}}'] = data.vehicle.color or ''
+            # CKDEV-NOTE: Garantir que cor seja sempre substituída, mesmo vazia
+            replacements['{{USED_VEHICLE_COLOR}}'] = data.vehicle.color.strip() if data.vehicle.color else ''
             replacements['{{USED_VEHICLE_PLATE}}'] = data.vehicle.plate or ''
             replacements['{{USED_VEHICLE_YEAR_MODEL}}'] = data.vehicle.year_model or ''
             replacements['{{USED_VEHICLE_CREDIT}}'] = format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00'
@@ -50,7 +51,7 @@ class TemplateReplacementManager:
             replacements.update({
                 'MARCA_VEICULO': brand, 
                 'MODELO_VEICULO': data.vehicle.model or '', 
-                'COR_VEICULO': data.vehicle.color or '', 
+                'COR_VEICULO': data.vehicle.color.strip() if data.vehicle.color else '', 
                 'PLACA_VEICULO': data.vehicle.plate or '', 
                 'CHASSI_VEICULO': data.vehicle.chassis or '', 
                 'ANO_MODELO_VEICULO': data.vehicle.year_model or ''
@@ -378,12 +379,13 @@ class TemplateReplacementManager:
                 '{{USED_VEHICLE_MODEL}}': data.vehicle.model or '',
                 '{{USED_VEHICLE_CHASSI}}': data.vehicle.chassis or '',
                 '{{USED_VEHICLE_CHASSIS}}': data.vehicle.chassis or '',
-                '{{USED_VEHICLE_COLOR}}': data.vehicle.color or '',
+                '{{USED_VEHICLE_COLOR}}': data.vehicle.color.strip() if data.vehicle.color else '',
                 '{{USED_VEHICLE_PLATE}}': data.vehicle.plate or '',
                 '{{USED_VEHICLE_YEAR_MODEL}}': data.vehicle.year_model or '',
                 'USED_VEHICLE_CREDIT': format_currency_value(data.vehicle.value) if data.vehicle.value else ''
             })
         else:
+            # CKDEV-NOTE: Garantir placeholder vazio quando não há dados de veículo
             replacements.update({
                 '{{USED_VEHICLE_BRAND}}': '',
                 '{{USED_VEHICLE_MODEL}}': '',

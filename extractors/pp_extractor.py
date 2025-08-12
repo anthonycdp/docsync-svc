@@ -346,20 +346,41 @@ class ProposalExtractor(LoggerMixin):
                 break
                 
         color_patterns = [
-            r'TURBO\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
-            r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
-            r'[A-Z0-9\s\.\-]+\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
-            r'Cor:\s*([A-Z\s]+?)(?:\s*Valor|\s*Fab/Mod|\s*Avaliação|\s*\d{1,3}\.\d{3},\d{2}|\n)',
-            r'^(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)$',
-            r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+(?:\d{1,3}\.\d{3},\d{2})',
-            r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\b(?!\s+VALOR)',
+            # CKDEV-NOTE: Padrões específicos para estruturas com FL/FLEX
+            r'TURBO\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
+            r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
+            r'[A-Z0-9\s\.\-]+\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
+            
+            # CKDEV-NOTE: Padrões com placa específica
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
+            
+            # CKDEV-NOTE: Padrão explícito "Cor:"
+            r'Cor:\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+?)(?:\s*Valor|\s*Fab/Mod|\s*Avaliação|\s*\d{1,3}\.\d{3},\d{2}|\n)',
+            
+            # CKDEV-NOTE: Cores isoladas no início de linha
+            r'^(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)$',
+            
+            # CKDEV-NOTE: Cores seguidas de valores monetários
+            r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\s+(?:\d{1,3}\.\d{3},\d{2})',
+            
+            # CKDEV-NOTE: Cores no contexto geral (mais flexível)
+            r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b(?!\s+VALOR)',
+            
+            # CKDEV-NOTE: Padrões para cores compostas ou mais específicas
+            r'\b(BRANCO\s+POLAR|PRETO\s+SANTORINI|PRATA\s+REFLEX|AZUL\s+OCEANO|VERDE\s+AMAZONAS|CINZA\s+MOONSTONE|GRAFITE\s+STELLAR)\b',
+            
+            # CKDEV-NOTE: Fallback para qualquer palavra após "Cor" em maiúscula
+            r'Cor[:\s]+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]*?)(?:\s+(?:Valor|Fab|Mod|Avaliação|\d)|\n|$)',
         ]
         
         for pattern in color_patterns:
             color_match = re.search(pattern, section_text, re.IGNORECASE | re.MULTILINE)
             if color_match:
                 vehicle.color = color_match.group(1).upper().strip()
+                self.log_operation("_extract_vehicle_data", 
+                                 action="color_extracted", 
+                                 pattern_used=pattern[:50] + "..." if len(pattern) > 50 else pattern,
+                                 extracted_color=vehicle.color)
                 break
         
         if not vehicle.color and pdf_path and PYMUPDF_AVAILABLE:
@@ -391,11 +412,41 @@ class ProposalExtractor(LoggerMixin):
                                 lines = pymupdf_section_text.split('\n')
                                 for line in lines:
                                     line_clean = line.strip().upper()
-                                    if line_clean in ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 'CINZA', 'DOURADO', 'VERDE', 'AMARELO', 'BEGE']:
+                                    # CKDEV-NOTE: Lista expandida de cores válidas incluindo variações
+                                    valid_colors = [
+                                        'PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
+                                        'CINZA', 'CINZENTO', 'DOURADO', 'OURO', 'VERDE', 'AMARELO', 
+                                        'BEGE', 'GRAFITE', 'PÉROLA', 'METÁLICA', 'METALICA',
+                                        # Cores compostas comuns
+                                        'BRANCO POLAR', 'PRETO SANTORINI', 'PRATA REFLEX', 
+                                        'AZUL OCEANO', 'VERDE AMAZONAS', 'CINZA MOONSTONE', 
+                                        'GRAFITE STELLAR'
+                                    ]
+                                    
+                                    # Verificação exata
+                                    if line_clean in valid_colors:
                                         vehicle.color = line_clean
                                         break
-                    except Exception:
+                                    
+                                    # Verificação parcial para cores que podem ter sufixos
+                                    for color in valid_colors:
+                                        if line_clean.startswith(color) and len(line_clean) <= len(color) + 10:
+                                            vehicle.color = line_clean
+                                            break
+                                    
+                                    if vehicle.color:
+                                        self.log_operation("_extract_vehicle_data", 
+                                                         action="color_extracted_pymupdf_vertical", 
+                                                         extracted_color=vehicle.color)
+                                        break
+                    except Exception as e:
+                        self.log_error(e, "_extract_vehicle_data", context="pymupdf_fallback")
                         pass
+        
+        # CKDEV-NOTE: Log quando cor não é extraída para debug
+        if not vehicle.color:
+            self.log_warning("Cor do veículo não extraída", 
+                           section_preview=section_text[:200] + "..." if len(section_text) > 200 else section_text)
             
         year_model_patterns = [
             r'Fab/Mod:\s*(\d{4})\s*/\s*(\d{4})',

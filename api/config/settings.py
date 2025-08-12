@@ -20,7 +20,7 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES: timedelta = timedelta(days=30)
     
     CORS_ORIGINS: List[str] = [
-        "https://doc-sync-service.onrender.com/*"
+        "https://doc-sync-original.netlify.app/*"
     ]
     CORS_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     CORS_ALLOW_HEADERS: List[str] = ["Content-Type", "Authorization"]

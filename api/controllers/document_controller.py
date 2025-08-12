@@ -292,7 +292,6 @@ def create_document_controller(
                     # CKDEV-NOTE: Verify PDF file is actually accessible for download
                     try:
                         from ..services.file_service import FileService
-                        from ..config import get_config
                         config = get_config()
                         file_service = FileService(config)
                         

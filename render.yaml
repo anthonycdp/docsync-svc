@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: doc-sync-service
+    env: python
+    buildCommand: |
+      # Install system dependencies
+      apt-get update && apt-get install -y libreoffice
+      # Install Python dependencies
+      pip install -r requirements.txt
+    startCommand: python app.py
+    plan: free
+    branch: main
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 5000

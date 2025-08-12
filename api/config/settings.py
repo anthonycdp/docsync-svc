@@ -63,7 +63,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     
     # CKDEV-NOTE: API base URL for generating download URLs
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://doc-sync-service.onrender.com")
     
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
@@ -135,6 +135,9 @@ class ProductionConfig(Config):
     RATELIMIT_DEFAULT = "50 per hour"
     
     LOG_LEVEL = "WARNING"
+    
+    # CKDEV-NOTE: Production API base URL
+    API_BASE_URL = os.getenv("API_BASE_URL", "https://doc-sync-service.onrender.com")
 
 
 config = {

@@ -140,7 +140,7 @@ class FileService:
     
     def get_file(self, filename: str, directory: str = "upload") -> Path:
         # CKDEV-NOTE: Use the correct directory based on the request
-        if directory == "upload":
+        if directory in ["upload", "uploads"]:
             base_dir = self.upload_dir
         elif directory == "output":
             base_dir = self.output_dir
@@ -293,7 +293,7 @@ class FileService:
         }
     
     def list_files(self, directory: str = "upload", pattern: str = "*") -> List[Dict[str, Any]]:
-        base_dir = self.upload_dir if directory == "upload" else self.output_dir
+        base_dir = self.upload_dir if directory in ["upload", "uploads"] else self.output_dir
         
         files = []
         for file_path in base_dir.glob(pattern):

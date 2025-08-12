@@ -59,7 +59,8 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             logger.info(f"File download requested: {filename}", extra=RequestHelper.log_request_info("download"))
             
             directory = request.args.get('dir', 'output')
-            if directory not in ['upload', 'output']:
+            # CKDEV-NOTE: Accept both 'upload'/'uploads' for backward compatibility
+            if directory not in ['upload', 'uploads', 'output']:
                 return ResponseBuilder.error("Invalid directory"), 400
             
             file_path = file_service.get_file(filename, directory)
@@ -127,7 +128,8 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
     def get_file_info(filename):
         try:
             directory = request.args.get('dir', 'output')
-            if directory not in ['upload', 'output']:
+            # CKDEV-NOTE: Accept both 'upload'/'uploads' for backward compatibility
+            if directory not in ['upload', 'uploads', 'output']:
                 return ResponseBuilder.error("Invalid directory"), 400
             
             file_info = file_service.get_file_info(filename, directory)
@@ -151,7 +153,8 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             pattern = request.args.get('pattern', '*')
             limit = int(request.args.get('limit', 100))
             
-            if directory not in ['upload', 'output']:
+            # CKDEV-NOTE: Accept both 'upload'/'uploads' for backward compatibility
+            if directory not in ['upload', 'uploads', 'output']:
                 return ResponseBuilder.error("Invalid directory"), 400
             
             files = file_service.list_files(directory, pattern)
@@ -175,7 +178,8 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
     def delete_file(filename):
         try:
             directory = request.args.get('dir', 'upload')
-            if directory not in ['upload', 'output']:
+            # CKDEV-NOTE: Accept both 'upload'/'uploads' for backward compatibility
+            if directory not in ['upload', 'uploads', 'output']:
                 return ResponseBuilder.error("Invalid directory"), 400
             
             success = file_service.delete_file(filename, directory)

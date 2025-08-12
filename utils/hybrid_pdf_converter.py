@@ -4,7 +4,15 @@ from pathlib import Path
 from typing import Tuple, Optional
 import logging
 
-# CKDEV-NOTE: Hybrid converter supporting both LibreOffice and docx2pdf fallback
+# CKDEV-NOTE: Enhanced hybrid converter with formatting preservation
+try:
+    from .enhanced_docx_to_pdf import convert_docx_to_pdf_enhanced
+except ImportError:
+    try:
+        from enhanced_docx_to_pdf import convert_docx_to_pdf_enhanced
+    except ImportError:
+        convert_docx_to_pdf_enhanced = None
+
 try:
     from .libreoffice_converter import convert_docx_to_pdf_libreoffice
 except ImportError:
@@ -21,8 +29,8 @@ except ImportError:
 
 class HybridPDFConverter:
     """
-    Hybrid PDF converter with LibreOffice primary and docx2pdf fallback.
-    Ensures PDF generation works in both Linux production and Windows development.
+    Enhanced hybrid PDF converter with formatting preservation priority.
+    Ensures PDF generation works with proper layout in any environment.
     """
     
     def __init__(self):
@@ -35,10 +43,11 @@ class HybridPDFConverter:
         pdf_path: Optional[str] = None
     ) -> Tuple[bool, str, Optional[str]]:
         """
-        Convert DOCX to PDF using hybrid approach:
-        1. Try LibreOffice (preferred for Linux/high fidelity)
-        2. Fall back to docx2pdf (Windows/compatibility)
-        3. Fall back to python-docx + reportlab (pure Python)
+        Convert DOCX to PDF using enhanced hybrid approach prioritizing formatting preservation:
+        1. Enhanced converter (best formatting preservation)
+        2. LibreOffice (preferred for Linux/high fidelity) 
+        3. docx2pdf (Windows/compatibility)
+        4. Basic python-docx + reportlab (pure Python fallback)
         
         Args:
             docx_path: Path to the .docx file
@@ -53,7 +62,19 @@ class HybridPDFConverter:
         if pdf_path is None:
             pdf_path = str(Path(docx_path).with_suffix('.pdf'))
         
-        # CKDEV-NOTE: Try LibreOffice first for high fidelity conversion
+        # CKDEV-NOTE: Try enhanced converter first for best formatting preservation
+        if convert_docx_to_pdf_enhanced:
+            try:
+                success, message, result_path = convert_docx_to_pdf_enhanced(docx_path, pdf_path)
+                if success and result_path:
+                    self.logger.info(f"Enhanced converter successful: {result_path}")
+                    return success, f"Enhanced: {message}", result_path
+                else:
+                    self.logger.warning(f"Enhanced converter failed: {message}")
+            except Exception as e:
+                self.logger.warning(f"Enhanced converter error: {e}")
+        
+        # CKDEV-NOTE: Fall back to LibreOffice for high fidelity conversion
         if convert_docx_to_pdf_libreoffice:
             try:
                 success, message, result_path = convert_docx_to_pdf_libreoffice(docx_path, pdf_path)
@@ -77,7 +98,7 @@ class HybridPDFConverter:
             except Exception as e:
                 self.logger.warning(f"docx2pdf fallback error: {e}")
         
-        # CKDEV-NOTE: Last resort - pure Python conversion
+        # CKDEV-NOTE: Last resort - basic Python conversion
         try:
             success, message, result_path = self._convert_with_python_libs(docx_path, pdf_path)
             if success and result_path:
@@ -88,7 +109,7 @@ class HybridPDFConverter:
         except Exception as e:
             self.logger.error(f"Python library fallback error: {e}")
         
-        return False, "All PDF conversion methods failed. LibreOffice not available, docx2pdf failed, and Python libraries failed.", None
+        return False, "All PDF conversion methods failed. Enhanced converter, LibreOffice, docx2pdf, and Python libraries all failed.", None
     
     def _convert_with_docx2pdf(self, docx_path: str, pdf_path: str) -> Tuple[bool, str, Optional[str]]:
         """Convert using docx2pdf (Windows primary method)"""

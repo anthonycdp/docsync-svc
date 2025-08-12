@@ -17,10 +17,21 @@ class FileService:
         self.config = config
         self.logger = get_service_logger('file')
         self.upload_dir = Path(config.UPLOAD_FOLDER)
+        
+        # CKDEV-NOTE: Use the correct output directory from config
+        # This ensures PDFs are found in the same location where they're generated
         self.output_dir = Path(config.OUTPUT_DIR)
         
+        # CKDEV-NOTE: Ensure both directories exist
         FileManager.ensure_directory(self.upload_dir)
         FileManager.ensure_directory(self.output_dir)
+        
+        # CKDEV-NOTE: Log the actual paths being used for debugging
+        self.logger.info(f"FileService initialized with upload_dir: {self.upload_dir}")
+        self.logger.info(f"FileService initialized with output_dir: {self.output_dir}")
+        self.logger.info(f"Output directory exists: {self.output_dir.exists()}")
+        if self.output_dir.exists():
+            self.logger.info(f"Output directory contents: {list(self.output_dir.iterdir())}")
     
     def upload_files(self, files: List[FileStorage]) -> List[Dict[str, Any]]:
         if not files:
@@ -98,95 +109,71 @@ class FileService:
         
         try:
             FileManager.generate_safe_path(self.upload_dir, filename)
-        except SecurityError:
-            raise SecurityError(f"Invalid filename detected: {filename}")
+        except Exception as e:
+            raise SecurityError(f"Invalid filename: {filename}")
     
     def _validate_uploaded_file(self, file_path: Path, original_filename: str) -> Dict[str, Any]:
         if not file_path.exists():
-            raise FileProcessingError(f"File was not saved properly: {file_path}")
+            raise FileProcessingError(f"File was not saved: {original_filename}")
         
-        stat = file_path.stat()
+        file_size = file_path.stat().st_size
+        if file_size == 0:
+            file_path.unlink()
+            raise FileProcessingError(f"Uploaded file is empty: {original_filename}")
         
-        if stat.st_size == 0:
-            raise ValidationError(f"Uploaded file is empty: {original_filename}")
-        
-        if stat.st_size > self.config.MAX_CONTENT_LENGTH:
-            raise ValidationError(f"File exceeds maximum size: {original_filename}")
-        
-        file_ext = file_path.suffix.lower()
-        
-        content_type_map = {
-            '.pdf': 'application/pdf',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.png': 'image/png',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        }
-        
-        content_type = content_type_map.get(file_ext, 'application/octet-stream')
-        
-        file_type = self._determine_file_type(file_path)
-        
-        if not self._validate_file_content(file_path, file_type):
-            self.logger.warning(
-                f"File content doesn't match extension: {file_path}",
-                extra={"expected_type": file_type, "extension": file_ext}
-            )
+        content_type = FileManager.determine_content_type(original_filename)
+        file_type = FileManager.get_file_type(original_filename)
         
         return {
             "content_type": content_type,
-            "size": stat.st_size,
-            "file_type": file_type,
-            "extension": file_ext
+            "size": file_size,
+            "file_type": file_type
         }
     
-    def _determine_file_type(self, file_path: Path) -> str:
-        ext = file_path.suffix.lower()
-        
-        if ext == '.pdf':
-            return 'pdf'
-        elif ext in ['.jpg', '.jpeg', '.png']:
-            return 'image'
-        elif ext == '.docx':
-            return 'docx'
-        else:
-            return 'unknown'
-    
-    def _validate_file_content(self, file_path: Path, expected_type: str) -> bool:
-        try:
-            with open(file_path, 'rb') as f:
-                header = f.read(16)
-            
-            if expected_type == 'pdf':
-                return header.startswith(b'%PDF')
-            elif expected_type == 'image':
-                return (
-                    header.startswith(b'\xff\xd8\xff') or
-                    header.startswith(b'\x89PNG\r\n\x1a\n')
-                )
-            elif expected_type == 'docx':
-                return header.startswith(b'PK')
-            
-            return True
-            
-        except Exception:
-            return False
+    def _cleanup_files(self, file_paths: List[str]) -> None:
+        for file_path in file_paths:
+            try:
+                Path(file_path).unlink()
+                self.logger.info(f"Cleaned up file: {file_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to cleanup file {file_path}: {e}")
     
     def get_file(self, filename: str, directory: str = "upload") -> Path:
-        base_dir = self.upload_dir if directory == "upload" else self.output_dir
+        # CKDEV-NOTE: Use the correct directory based on the request
+        if directory == "upload":
+            base_dir = self.upload_dir
+        elif directory == "output":
+            base_dir = self.output_dir
+        else:
+            raise SecurityError(f"Invalid directory: {directory}")
         
+        # CKDEV-NOTE: Security check for path traversal
         if '..' in filename or '/' in filename or '\\' in filename:
             raise SecurityError(f"Invalid filename: {filename}")
         
         file_path = base_dir / filename
         
+        # CKDEV-NOTE: Enhanced logging for debugging file access
+        self.logger.info(f"Looking for file: {filename} in directory: {directory}")
+        self.logger.info(f"Full file path: {file_path}")
+        self.logger.info(f"File exists: {file_path.exists()}")
+        
         if not file_path.exists():
+            # CKDEV-NOTE: List directory contents for debugging
+            if base_dir.exists():
+                available_files = list(base_dir.iterdir())
+                self.logger.warning(f"File not found: {filename}. Available files in {directory}: {[f.name for f in available_files]}")
+            else:
+                self.logger.error(f"Base directory does not exist: {base_dir}")
+            
             from ..exceptions import FileNotFoundError
             raise FileNotFoundError(filename)
         
+        # CKDEV-NOTE: Security check to prevent path traversal
         if not str(file_path.resolve()).startswith(str(base_dir.resolve())):
             raise SecurityError(f"Path traversal attempt: {filename}")
         
+        self.logger.info(f"File found successfully: {file_path}")
         return file_path
     
     def delete_file(self, filename: str, directory: str = "upload") -> bool:
@@ -318,13 +305,6 @@ class FileService:
                     self.logger.warning(f"Error getting info for {file_path}: {e}")
         
         return sorted(files, key=lambda x: x["modified"], reverse=True)
-    
-    def _cleanup_files(self, file_paths: List[str]) -> None:
-        for file_path in file_paths:
-            try:
-                Path(file_path).unlink()
-            except Exception:
-                pass
     
     def _format_file_size(self, size_bytes: int) -> str:
         for unit in ['B', 'KB', 'MB', 'GB']:

@@ -248,6 +248,13 @@ def create_document_controller(
             # CKDEV-NOTE: Enhanced PDF generation with comprehensive validation
             try:
                 logger.info(f"Attempting PDF conversion from: {output_filename}")
+                
+                # CKDEV-NOTE: Ensure the output directory exists and is accessible
+                output_dir = output_filename.parent
+                logger.info(f"Output directory: {output_dir}")
+                logger.info(f"Output directory exists: {output_dir.exists()}")
+                logger.info(f"Output directory contents: {list(output_dir.iterdir()) if output_dir.exists() else 'Directory not found'}")
+                
                 pdf_path = pdf_service.convert_docx_to_pdf(output_filename)
                 
                 # CKDEV-NOTE: Comprehensive PDF validation before marking as available
@@ -255,6 +262,24 @@ def create_document_controller(
                     pdf_filename = pdf_path.name
                     formats_available.append('pdf')
                     logger.info(f"PDF generated and validated successfully: {pdf_filename} ({pdf_path.stat().st_size} bytes)")
+                    
+                    # CKDEV-NOTE: Verify PDF file is actually accessible for download
+                    try:
+                        from ..services.file_service import FileService
+                        from ..config import get_config
+                        config = get_config()
+                        file_service = FileService(config)
+                        
+                        # Test if the PDF can be accessed through the file service
+                        test_path = file_service.get_file(pdf_filename, 'output')
+                        logger.info(f"PDF file accessible through FileService: {test_path}")
+                        
+                    except Exception as access_error:
+                        logger.error(f"PDF file not accessible through FileService: {access_error}")
+                        # CKDEV-NOTE: Remove PDF from available formats if not accessible
+                        formats_available.remove('pdf')
+                        pdf_filename = None
+                        
                 else:
                     logger.warning(f"PDF conversion failed validation. DOCX available: {output_filename.name}")
                     # CKDEV-NOTE: Clean up invalid PDF file if it exists
@@ -271,14 +296,23 @@ def create_document_controller(
             config = get_config()
             api_base_url = config.API_BASE_URL
             
+            # CKDEV-NOTE: Generate download URLs only for available formats
             response_data = {
                 "output_filename": output_filename.name,
                 "download_url": f"{api_base_url}/api/files/download/{output_filename.name}?dir=output",
-                "pdf_filename": pdf_filename,
-                "pdf_download_url": f"{api_base_url}/api/files/download/{pdf_filename}?dir=output" if pdf_filename else None,
                 "formats_available": formats_available,
                 "template_type": session.template_type.value
             }
+            
+            # CKDEV-NOTE: Add PDF information only if PDF is available
+            if pdf_filename and 'pdf' in formats_available:
+                response_data["pdf_filename"] = pdf_filename
+                response_data["pdf_download_url"] = f"{api_base_url}/api/files/download/{pdf_filename}?dir=output"
+            else:
+                response_data["pdf_filename"] = None
+                response_data["pdf_download_url"] = None
+                logger.info("PDF not available - not including PDF download information in response")
+            
             logger.info(f"Returning response: {response_data}")
             
             return ResponseBuilder.success(
@@ -526,6 +560,7 @@ def create_document_controller(
             
             logger.info(f"Output directory: {output_dir}")
             
+            # CKDEV-NOTE: Ensure output directory exists and is accessible
             if not output_dir.exists():
                 try:
                     output_dir.mkdir(parents=True, exist_ok=True)
@@ -535,6 +570,16 @@ def create_document_controller(
                     output_dir = Path(tempfile.gettempdir()) / 'doc_sync_output'
                     output_dir.mkdir(parents=True, exist_ok=True)
                     logger.warning(f"Using temp directory due to permissions: {output_dir}")
+            
+            # CKDEV-NOTE: Verify directory is writable
+            try:
+                test_file = output_dir / '.test_write'
+                test_file.write_text('test')
+                test_file.unlink()
+                logger.info(f"Output directory is writable: {output_dir}")
+            except Exception as write_error:
+                logger.error(f"Output directory is not writable: {write_error}")
+                raise Exception(f"Cannot write to output directory: {output_dir}")
             
             # CKDEV-NOTE: Extract first name from client data for filename
             from ..utils.helpers import FileHelper
@@ -589,6 +634,21 @@ def create_document_controller(
             if result_file.exists():
                 file_size = result_file.stat().st_size
                 logger.info(f"Generated file size: {file_size} bytes")
+                
+                # CKDEV-NOTE: Verify file is in the correct output directory
+                if result_file.parent != output_dir:
+                    logger.warning(f"Generated file is not in expected output directory. Expected: {output_dir}, Actual: {result_file.parent}")
+                    
+                    # CKDEV-NOTE: Move file to correct location if needed
+                    try:
+                        correct_path = output_dir / result_file.name
+                        if correct_path.exists():
+                            correct_path.unlink()  # Remove existing file
+                        result_file.rename(correct_path)
+                        logger.info(f"Moved file to correct output directory: {correct_path}")
+                        result_path = str(correct_path)
+                    except Exception as move_error:
+                        logger.error(f"Failed to move file to correct output directory: {move_error}")
             else:
                 logger.error(f"Generated file does not exist: {result_path}")
             

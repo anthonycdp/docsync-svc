@@ -371,48 +371,58 @@ class ProposalExtractor(LoggerMixin):
         
         # CKDEV-NOTE: Additional patterns for edge cases - enhanced for production compatibility
         if not vehicle.color:
-            # Try parsing the raw pdfplumber text differently for table-based layouts
-            table_sections = section_text.split('\n')
+            # Handle specific OCR corruption pattern for PRETO color
+            if 'RPERTEOMIER' in section_text or 'RPERTEO' in section_text:
+                # RPERTEOMIER is corrupted OCR for PRETO (black color)
+                vehicle.color = 'PRETO'
+                self.log_operation("_extract_vehicle_data", 
+                                 action="color_extracted_from_corruption", 
+                                 corrupted_text="RPERTEOMIER/RPERTEO",
+                                 extracted_color=vehicle.color)
             
-            # Look for table headers and try to extract color from structured data
-            for i, line in enumerate(table_sections):
-                line_clean = line.strip().upper()
+            # Try parsing the raw pdfplumber text differently for table-based layouts
+            if not vehicle.color:
+                table_sections = section_text.split('\n')
                 
-                # If we find a line with common table headers
-                if any(header in line_clean for header in ['PLACA', 'MODELO', 'COR', 'VALOR']):
-                    # Look in subsequent lines for color values
-                    for j in range(i + 1, min(i + 10, len(table_sections))):
-                        next_line = table_sections[j].strip().upper()
-                        
-                        # Check if this line contains color information
-                        color_words = ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
-                                     'CINZA', 'CINZENTO', 'DOURADO', 'VERDE', 'AMARELO', 
-                                     'BEGE', 'GRAFITE', 'AZUL TITAN']
-                        
-                        for color in color_words:
-                            if color in next_line:
-                                # Check if this looks like vehicle data (has plate or value pattern)
-                                if (vehicle.plate and vehicle.plate in next_line) or re.search(r'\d{1,3}\.\d{3},\d{2}', next_line):
-                                    vehicle.color = color
-                                    self.log_operation("_extract_vehicle_data", 
-                                                     action="color_extracted_table_parsing", 
-                                                     line_content=next_line[:50],
-                                                     extracted_color=vehicle.color)
-                                    break
-                                # Or if the line only contains color and value
-                                elif re.match(f'^{color}\\s*\\d{{1,3}}\\.\\d{{3}},\\d{{2}}', next_line):
-                                    vehicle.color = color
-                                    self.log_operation("_extract_vehicle_data", 
-                                                     action="color_extracted_value_pattern", 
-                                                     line_content=next_line[:50],
-                                                     extracted_color=vehicle.color)
-                                    break
+                # Look for table headers and try to extract color from structured data
+                for i, line in enumerate(table_sections):
+                    line_clean = line.strip().upper()
+                    
+                    # If we find a line with common table headers
+                    if any(header in line_clean for header in ['PLACA', 'MODELO', 'COR', 'VALOR']):
+                        # Look in subsequent lines for color values
+                        for j in range(i + 1, min(i + 10, len(table_sections))):
+                            next_line = table_sections[j].strip().upper()
+                            
+                            # Check if this line contains color information
+                            color_words = ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
+                                         'CINZA', 'CINZENTO', 'DOURADO', 'VERDE', 'AMARELO', 
+                                         'BEGE', 'GRAFITE', 'AZUL TITAN']
+                            
+                            for color in color_words:
+                                if color in next_line:
+                                    # Check if this looks like vehicle data (has plate or value pattern)
+                                    if (vehicle.plate and vehicle.plate in next_line) or re.search(r'\d{1,3}\.\d{3},\d{2}', next_line):
+                                        vehicle.color = color
+                                        self.log_operation("_extract_vehicle_data", 
+                                                         action="color_extracted_table_parsing", 
+                                                         line_content=next_line[:50],
+                                                         extracted_color=vehicle.color)
+                                        break
+                                    # Or if the line only contains color and value
+                                    elif re.match(f'^{color}\\s*\\d{{1,3}}\\.\\d{{3}},\\d{{2}}', next_line):
+                                        vehicle.color = color
+                                        self.log_operation("_extract_vehicle_data", 
+                                                         action="color_extracted_value_pattern", 
+                                                         line_content=next_line[:50],
+                                                         extracted_color=vehicle.color)
+                                        break
+                            
+                            if vehicle.color:
+                                break
                         
                         if vehicle.color:
                             break
-                    
-                    if vehicle.color:
-                        break
             
             # Additional fallback patterns for edge cases
             if not vehicle.color:
@@ -582,14 +592,23 @@ class ProposalExtractor(LoggerMixin):
                 vehicle.year_model = ""
         
         if used_vehicle_section:
-            value_pattern = r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})\s+[A-Z0-9\s\.\-]+?\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+([\d.,]+)'
-            value_match = re.search(value_pattern, section_text, re.IGNORECASE)
+            # Handle merged AUTOMATIC and value pattern
+            automatic_value_pattern = r'AUTOMATIC(\d{1,3}(?:\.\d{3})*,\d{2})'
+            automatic_match = re.search(automatic_value_pattern, section_text, re.IGNORECASE)
             
-            if value_match:
-                raw_value = value_match.group(2); formatted_value = raw_value.replace('.', '').replace(',', ','); vehicle.value = formatted_value
+            if automatic_match:
+                vehicle.value = automatic_match.group(1)
             else:
-                fallback_value_pattern = r'(\d{1,3}(?:\.\d{3})*,\d{2})'; fallback_match = re.search(fallback_value_pattern, section_text)
-                if fallback_match: vehicle.value = fallback_match.group(1)
+                value_pattern = r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})\s+[A-Z0-9\s\.\-]+?\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+([\d.,]+)'
+                value_match = re.search(value_pattern, section_text, re.IGNORECASE)
+                
+                if value_match:
+                    raw_value = value_match.group(2); formatted_value = raw_value.replace('.', '').replace(',', ','); vehicle.value = formatted_value
+                else:
+                    # Only use fallback if color is already found (to avoid value being used as color)
+                    if vehicle.color:
+                        fallback_value_pattern = r'(\d{1,3}(?:\.\d{3})*,\d{2})'; fallback_match = re.search(fallback_value_pattern, section_text)
+                        if fallback_match: vehicle.value = fallback_match.group(1)
         
         if vehicle.model:
             if not vehicle.brand:

@@ -1,5 +1,6 @@
 import os
 import sys
+import platform
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -14,6 +15,16 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils.logging_config import LoggerMixin
 
+# CKDEV-NOTE: Import Linux-compatible converter
+try:
+    from .linux_pdf_converter import convert_docx_to_pdf_linux, is_linux
+except ImportError:
+    try:
+        from linux_pdf_converter import convert_docx_to_pdf_linux, is_linux
+    except ImportError:
+        convert_docx_to_pdf_linux = None
+        is_linux = lambda: False
+
 
 class PDFConverter(LoggerMixin):
     """Conversor de DOCX para PDF com tratamento robusto de erros"""
@@ -23,8 +34,9 @@ class PDFConverter(LoggerMixin):
         self._validate_dependencies()
     
     def _validate_dependencies(self):
-        if convert is None:
-            raise ImportError("docx2pdf library not found. Install with: pip install docx2pdf")
+        # CKDEV-NOTE: Allow operation on Linux without docx2pdf
+        if convert is None and not (is_linux() and convert_docx_to_pdf_linux):
+            raise ImportError("docx2pdf library not found and Linux converter not available. Install with: pip install docx2pdf")
     
     def convert_to_pdf(self, docx_path: str, pdf_path: Optional[str] = None) -> Tuple[bool, str, Optional[str]]:
         """
@@ -53,7 +65,15 @@ class PDFConverter(LoggerMixin):
             
             self.logger.info(f"Converting {docx_path} to {pdf_path}")
             
-            # CKDEV-NOTE: Tentar conversão com docx2pdf
+            # CKDEV-NOTE: Use Linux-compatible converter if on Linux
+            if is_linux() and convert_docx_to_pdf_linux:
+                self.logger.info("Using Linux-compatible PDF converter")
+                return convert_docx_to_pdf_linux(docx_path, pdf_path)
+            
+            # CKDEV-NOTE: Fall back to docx2pdf for Windows/Mac
+            if convert is None:
+                return False, "docx2pdf library not available and not on Linux", None
+            
             try:
                 convert(docx_path, pdf_path)
                 

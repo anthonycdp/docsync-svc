@@ -216,8 +216,10 @@ def create_document_controller(
         except Exception as e:
             logger.error(f"Document processing failed: {e}")
             import traceback
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            return ResponseBuilder.error(f"Document processing failed: {str(e)}"), 500
+            full_traceback = traceback.format_exc()
+            logger.error(f"Full traceback: {full_traceback}")
+            # CKDEV-NOTE: Temporary detailed error for debugging - remove in production
+            return ResponseBuilder.error(f"Processing error: {str(e)} | Traceback: {full_traceback[:500]}"), 500
     
     @bp.route('/generate/<session_id>', methods=['POST'])
     def generate_document(session_id):

@@ -215,7 +215,9 @@ def create_document_controller(
             
         except Exception as e:
             logger.error(f"Document processing failed: {e}")
-            return ResponseBuilder.error("Document processing failed"), 500
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            return ResponseBuilder.error(f"Document processing failed: {str(e)}"), 500
     
     @bp.route('/generate/<session_id>', methods=['POST'])
     def generate_document(session_id):

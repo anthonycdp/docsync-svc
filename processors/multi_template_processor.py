@@ -43,11 +43,11 @@ class MultiTemplateProcessor(LoggerMixin):
             doc.save(output_path)
             
             try:
-                from ..utils import convert_docx_to_pdf
+                from ..utils import convert_docx_to_pdf_libreoffice
             except ImportError:
-                from utils import convert_docx_to_pdf
+                from utils import convert_docx_to_pdf_libreoffice
             
-            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf(output_path)
+            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_libreoffice(output_path)
             if pdf_success:
                 self.logger.info(f"PDF generated successfully: {pdf_path}")
             else:
@@ -67,11 +67,11 @@ class MultiTemplateProcessor(LoggerMixin):
                     doc.save(alternative_path)
                 
                 try:
-                    from ..utils import convert_docx_to_pdf
+                    from ..utils import convert_docx_to_pdf_libreoffice
                 except ImportError:
-                    from utils import convert_docx_to_pdf
+                    from utils import convert_docx_to_pdf_libreoffice
                 
-                pdf_success, pdf_message, pdf_path = convert_docx_to_pdf(alternative_path)
+                pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_libreoffice(alternative_path)
                 if pdf_success:
                     self.logger.info(f"PDF generated successfully: {pdf_path}")
                 else:

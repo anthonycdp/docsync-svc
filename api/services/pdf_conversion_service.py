@@ -4,14 +4,14 @@ from typing import Optional
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from utils.pdf_converter import convert_docx_to_pdf
+from utils.libreoffice_converter import convert_docx_to_pdf_libreoffice
 from ..exceptions import PDFConversionError
 from ..utils.logger import get_service_logger
 
 
 class PDFConversionService:
     """
-    CKDEV-NOTE: PDF conversion service using cross-platform converter with docx2pdf support
+    CKDEV-NOTE: PDF conversion service using LibreOffice-only converter for Linux compatibility
     """
     
     def __init__(self, config=None):
@@ -23,10 +23,10 @@ class PDFConversionService:
         pdf_path: Optional[Path] = None
     ) -> Optional[Path]:
         """
-        CKDEV-NOTE: PDF conversion using cross-platform converter (docx2pdf for Windows, LibreOffice for Linux)
+        CKDEV-NOTE: PDF conversion using LibreOffice headless mode for high fidelity output
         """
         try:
-            success, message, result_path = convert_docx_to_pdf(
+            success, message, result_path = convert_docx_to_pdf_libreoffice(
                 str(docx_path), 
                 str(pdf_path) if pdf_path else None
             )
@@ -35,7 +35,7 @@ class PDFConversionService:
                 self.logger.info(f"PDF generated successfully: {result_path}")
                 return Path(result_path)
             else:
-                self.logger.error(f"PDF converter failed: {message}")
+                self.logger.error(f"LibreOffice converter failed: {message}")
                 raise PDFConversionError(f"Failed to convert {docx_path.name} to PDF: {message}")
                 
         except Exception as e:

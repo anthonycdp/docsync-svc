@@ -144,7 +144,10 @@ class MultiTemplateProcessor(LoggerMixin):
         replacements = self.replacement_manager.get_termo_dacao_credito_replacements(data)
         
         if data.vehicle:
-            brand = data.vehicle.brand or self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
+            # CKDEV-NOTE: Consistent brand extraction logic aligned with pp_extractor.py
+            brand = data.vehicle.brand
+            if not brand or not brand.strip():
+                brand = self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
             replacements.update({
                 'MARCA_VEICULO_VENDIDO': brand,
                 'MODELO_VEICULO_VENDIDO': data.vehicle.model or '',
@@ -196,7 +199,10 @@ class MultiTemplateProcessor(LoggerMixin):
         if not data.vehicle:
             return {}
         
-        brand = data.vehicle.brand or self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
+        # CKDEV-NOTE: Consistent brand extraction logic aligned with pp_extractor.py
+        brand = data.vehicle.brand
+        if not brand or not brand.strip():
+            brand = self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
         replacements = {
             'MARCA_VEICULO': brand,
             'MODELO_VEICULO': data.vehicle.model or "",
@@ -242,7 +248,10 @@ class MultiTemplateProcessor(LoggerMixin):
         if not data.vehicle:
             return {}
             
-        brand = data.vehicle.brand or self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
+        # CKDEV-NOTE: Consistent brand extraction logic aligned with pp_extractor.py
+        brand = data.vehicle.brand
+        if not brand or not brand.strip():
+            brand = self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ""
         model, chassis, color, plate, year_model = data.vehicle.model or "", data.vehicle.chassis or "", data.vehicle.color or "", data.vehicle.plate or "", data.vehicle.year_model or ""
         
         # CKDEV-NOTE: Preserve formatting consistency - generate clean formatted text

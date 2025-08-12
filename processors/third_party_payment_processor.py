@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Optional, Any, Tuple
 
 try:
-    from ..extractors.pdf_extractor import PDFDataExtractor
+    from ..extractors import PDFDataExtractor
     from ..extractors.cnh_extractor import CNHExtractor
     from ..extractors.payment_receipt_extractor import PaymentReceiptExtractor
     from ..data.models import ExtractedData, ThirdPartyData, PaymentData
@@ -14,7 +14,7 @@ try:
     from ..utils import LoggerMixin
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from extractors.pdf_extractor import PDFDataExtractor
+    from extractors import PDFDataExtractor
     from extractors.cnh_extractor import CNHExtractor
     from extractors.payment_receipt_extractor import PaymentReceiptExtractor
     from data.models import ExtractedData, ThirdPartyData, PaymentData

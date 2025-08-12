@@ -1,21 +1,41 @@
-import re, sys
+import os, re, pdfplumber, sys, csv
 from pathlib import Path
 from typing import Optional, Dict
 
-if str(Path(__file__).parent.parent) not in sys.path: sys.path.insert(0, str(Path(__file__).parent.parent))
+if str(Path(__file__).parent.parent) not in sys.path: 
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    from ..data import ClientData, VehicleData, DocumentData, NewVehicleData, ExtractedData
-    from ..utils import LoggerMixin
+    import pytesseract
+    from pdf2image import convert_from_path
+    OCR_AVAILABLE = True
+except ImportError: 
+    OCR_AVAILABLE = False
+
+try:
+    import fitz
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+try:
+    from ..data import ClientData, VehicleData, DocumentData, PaymentData, NewVehicleData, ThirdPartyData, ExtractedData
+    from ..utils import LoggerMixin, PDFExtractionError, ValidationError
+    from ..utils.ocr_status import log_ocr_status_once
+    from .cnh_extractor import CNHExtractor
 except (ImportError, ValueError):
-    from data import ClientData, VehicleData, DocumentData, NewVehicleData, ExtractedData
-    from utils import LoggerMixin
+    from data import ClientData, VehicleData, DocumentData, PaymentData, NewVehicleData, ThirdPartyData, ExtractedData
+    from utils import LoggerMixin, PDFExtractionError, ValidationError
+    from utils.ocr_status import log_ocr_status_once
+    from extractors.cnh_extractor import CNHExtractor
 
 class ProposalExtractor(LoggerMixin):
     
     def __init__(self):
         super().__init__()
         self.patterns = self._setup_regex_patterns()
+        self.model_to_brand = self._load_brand_model_dictionary()
+        log_ocr_status_once()
     
     def _setup_regex_patterns(self) -> Dict[str, re.Pattern]:
         return {
@@ -29,7 +49,85 @@ class ProposalExtractor(LoggerMixin):
             'date': re.compile(r'\b\d{2}/\d{2}/\d{4}\b')
         }
     
+    def _load_brand_model_dictionary(self) -> Dict[str, str]:
+        """Carrega dicionário marca-modelo do CSV para matching automático"""
+        model_to_brand = {}
+        
+        try:
+            csv_path = Path(__file__).parent.parent / 'shared' / 'assets' / 'dic' / 'tabela_id_marca_modelo.csv'
+            
+            if csv_path.exists():
+                with open(csv_path, 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f, delimiter=';')
+                    for row in reader:
+                        marca = row.get('MARCA', '').strip()
+                        modelo = row.get('MODELO', '').strip()
+                        
+                        if marca and modelo:
+                            model_to_brand[modelo.upper()] = marca.upper()
+                
+                self.log_operation("_load_brand_model_dictionary", total_models=len(model_to_brand))
+            else:
+                self.log_warning("Dicionário marca-modelo não encontrado", csv_path=str(csv_path))
+                
+        except Exception as e:
+            self.log_error(e, "_load_brand_model_dictionary")
+        
+        return model_to_brand
+    
+    def extract_data(self, pdf_path: str) -> ExtractedData:
+        """Método principal - extrai todos os dados relevantes do PDF com fallback OCR inteligente"""
+        pdf_file = Path(pdf_path)
+        if not pdf_file.exists(): 
+            raise PDFExtractionError(f"Arquivo PDF não encontrado: {pdf_path}", pdf_path=pdf_path)
+        if pdf_file.suffix.lower() != '.pdf': 
+            raise ValidationError(f"Arquivo deve ser PDF, recebido: {pdf_file.suffix}", field_name="file_extension", field_value=pdf_file.suffix, validation_type="file_type")
+        
+        self.log_operation("extract_data", pdf_path=pdf_path)
+        
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                full_text = ""
+                for page in pdf.pages:
+                    full_text += (page.extract_text() or "") + "\n"
+                
+                extracted_data = self.extract_proposal_data(full_text, pdf_path) if len(full_text.strip()) >= 100 else None
+                if extracted_data and self._is_extraction_sufficient(extracted_data): 
+                    return extracted_data
+            
+            if OCR_AVAILABLE:
+                ocr_text = self._extract_text_with_ocr(pdf_path)
+                ocr_extracted_data = self.extract_proposal_data(ocr_text, pdf_path)
+                if self._is_extraction_sufficient(ocr_extracted_data): 
+                    return ocr_extracted_data
+            
+            return extracted_data or ExtractedData(client=ClientData(), vehicle=VehicleData(), document=DocumentData())
+                
+        except Exception as e:
+            self.log_error(e, "extract_data", pdf_path=pdf_path)
+            raise PDFExtractionError(f"Erro ao extrair dados do PDF: {e}", pdf_path=pdf_path)
+    
+    def _extract_text_with_ocr(self, pdf_path: str) -> str:
+        """Extrai texto usando OCR como fallback quando pdfplumber falha"""
+        if not OCR_AVAILABLE: 
+            raise Exception("Dependências de OCR não instaladas (pytesseract, pdf2image)")
+        
+        try:
+            pages = convert_from_path(pdf_path, dpi=200, poppler_path=None)
+            full_text = ""
+            for page_image in pages: 
+                full_text += pytesseract.image_to_string(page_image, lang='por') + "\n"
+            return full_text
+        except Exception as e: 
+            raise Exception(f"Erro na extração OCR: {e}")
+    
+    def _is_extraction_sufficient(self, extracted_data: ExtractedData) -> bool:
+        client_ok = bool(extracted_data.client.name.strip() and extracted_data.client.cpf.strip())
+        vehicle_ok = bool(extracted_data.vehicle.model.strip())
+        return client_ok and vehicle_ok
+    
     def extract_proposal_data(self, text: str, pdf_path: str = None) -> ExtractedData:
+        """Método especializado para extrair dados de proposta de veículo"""
         client = self._extract_client_data(text)
         vehicle = self._extract_vehicle_data(text, pdf_path)
         document = self._extract_document_data(text)
@@ -45,8 +143,6 @@ class ProposalExtractor(LoggerMixin):
             r'IDENTIFICAÇÃO DO PROPONENTE\s*\n[^\n]*\n\s*Cliente:\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+?)(?:\s*Código:|\s*Endereço:)',
             r'^([A-Z]{2,}\s+[A-Z]{2,}\s+[A-Z]{2,}\s+[A-Z]{2,})',
             r'([A-Z]{2,}\s+[A-Z]{2,}\s+(?:DE|DA|DO|DOS|DAS)\s+[A-Z]{2,})',
-            # CKDEV-NOTE: Pattern to extract name from the specific format in this PDF
-            r'Anthony\s+Coelho\s+De\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+)',
             r'([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]{10,50})\s+(?:CNPJ|CPF|RG|Endereço)',
         ]
         
@@ -220,10 +316,13 @@ class ProposalExtractor(LoggerMixin):
         
         model_patterns = [
             r'Modelo\s+([A-Z0-9\s\.\-]{3,50}?)(?:\s+Cor|\s+Valor|\s+Fab/Mod|\s+\d{4}/|\n)',
-            # CKDEV-NOTE: Pattern to extract model before color for TURBO FL format
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+((?:TRACKER|[A-Z][A-Z0-9\s\.\-]{{5,50}}?)\s+(?:\d\.\d+\s+)?TURBO(?:\s+FL)?)(?:\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+([A-Z][A-Z0-9\s\.\-]{{5,50}}?)(?:\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+([A-Z0-9\s\.\-]{{3,50}}?)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]*?\d\.\d+\s+(?:TURBO|FLEX))',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]*?(?:TURBO|FLEX))',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]+?)(?:\s+(?:FLEXP|RPERTEO|AUTOMATIC))',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z0-9\s\.\-]+?)(?=\s+(?:FLEXP|RPERTEO|AUTOMATIC))',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]+?)(?:\d{{1,3}}\.\d{{3}},\d{{2}}|\d{{4}}\s*/|\s+\d{{4}}/)',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z0-9\s\.\-]+?)(?=\d{{1,3}}\.\d{{3}},\d{{2}})',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]{{5,50}}?)(?:\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE))',
             r'([A-Z][A-Z0-9\s\.\-]{10,50}?)\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
         ]
         
@@ -247,26 +346,25 @@ class ProposalExtractor(LoggerMixin):
                 break
                 
         color_patterns = [
-            
-            r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
             r'TURBO\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
+            r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
             r'[A-Z0-9\s\.\-]+\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
+            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
             r'Cor:\s*([A-Z\s]+?)(?:\s*Valor|\s*Fab/Mod|\s*Avaliação|\s*\d{1,3}\.\d{3},\d{2}|\n)',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)(?:\s+\d{1,3}\.\d{3},\d{2})',
+            r'^(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)$',
             r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+(?:\d{1,3}\.\d{3},\d{2})',
             r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\b(?!\s+VALOR)',
         ]
         
         for pattern in color_patterns:
-            color_match = re.search(pattern, section_text, re.IGNORECASE)
+            color_match = re.search(pattern, section_text, re.IGNORECASE | re.MULTILINE)
             if color_match:
                 vehicle.color = color_match.group(1).upper().strip()
                 break
         
-        if not vehicle.color and pdf_path:
+        if not vehicle.color and pdf_path and PYMUPDF_AVAILABLE:
                 if pdf_path:
                     try:
-                        import fitz
                         doc = fitz.open(pdf_path)
                         pymupdf_text = ""
                         for page_num in range(len(doc)):
@@ -277,10 +375,25 @@ class ProposalExtractor(LoggerMixin):
                         pymupdf_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', pymupdf_text, re.DOTALL | re.IGNORECASE)
                         if pymupdf_section:
                             pymupdf_section_text = pymupdf_section.group(0)
-                            color_pattern = r'Cor\s+([A-Z\s]+?)(?:\s+Valor|\s+Fab/Mod|\s+Avaliação|\s+\d{1,3}\.\d{3},\d{2}|\n)'
-                            pymupdf_color_match = re.search(color_pattern, pymupdf_section_text, re.IGNORECASE)
+                            # CKDEV-NOTE: Fix para estrutura vertical do PyMuPDF onde cada campo está em linha separada
+                            # Primeiro tentar padrão horizontal (linha única)
+                            color_pattern_horizontal = r'Cor\s+([A-Z\s]+?)(?:\s+Valor|\s+Fab/Mod|\s+Avaliação|\s+\d{1,3}\.\d{3},\d{2}|\n)'
+                            pymupdf_color_match = re.search(color_pattern_horizontal, pymupdf_section_text, re.IGNORECASE)
                             if pymupdf_color_match:
-                                vehicle.color = pymupdf_color_match.group(1).upper()
+                                extracted_color = pymupdf_color_match.group(1).upper().strip()
+                                # CKDEV-NOTE: Ignorar se capturou "VALOR" (indica linha de cabeçalho)
+                                if extracted_color != 'VALOR':
+                                    vehicle.color = extracted_color
+                            
+                            # CKDEV-NOTE: Se não encontrou cor no padrão horizontal, tentar padrão vertical
+                            if not vehicle.color:
+                                # Procurar por linhas isoladas com cores válidas (padrão vertical)
+                                lines = pymupdf_section_text.split('\n')
+                                for line in lines:
+                                    line_clean = line.strip().upper()
+                                    if line_clean in ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 'CINZA', 'DOURADO', 'VERDE', 'AMARELO', 'BEGE']:
+                                        vehicle.color = line_clean
+                                        break
                     except Exception:
                         pass
             
@@ -361,8 +474,11 @@ class ProposalExtractor(LoggerMixin):
                 fallback_value_pattern = r'(\d{1,3}(?:\.\d{3})*,\d{2})'; fallback_match = re.search(fallback_value_pattern, section_text)
                 if fallback_match: vehicle.value = fallback_match.group(1)
         
-        if vehicle.model and not vehicle.brand:
-            vehicle.brand = self._extract_brand_from_model(vehicle.model)
+        if vehicle.model:
+            if not vehicle.brand:
+                vehicle.brand = self._extract_brand_from_model(vehicle.model)
+            elif not vehicle.brand.strip():
+                vehicle.brand = self._extract_brand_from_model(vehicle.model)
         
         return vehicle
     
@@ -371,62 +487,6 @@ class ProposalExtractor(LoggerMixin):
         
         proposal_match = self.patterns['proposal_number'].search(text)
         if proposal_match: document.proposal_number = proposal_match.group(1)
-        
-        date_location_pattern = r'([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ\s]+),\s*(\d{1,2})\s*de\s*([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑa-záàâãéèêíïóôõöúçñ]+)\s*de\s*(\d{4})'
-        
-        matches = re.findall(date_location_pattern, text, re.IGNORECASE | re.MULTILINE)
-        
-        months = {
-            'janeiro': '01', 'fevereiro': '02', 'março': '03', 'abril': '04',
-            'maio': '05', 'junho': '06', 'julho': '07', 'agosto': '08',
-            'setembro': '09', 'outubro': '10', 'novembro': '11', 'dezembro': '12',
-            'marco': '03'
-        }
-        
-        for city, day, month_name, year in matches:
-            city_clean = city.strip().upper()
-            month_name_clean = month_name.lower().strip()
-            
-            month_num = months.get(month_name_clean, '01')
-            
-            document.date = f"{day.zfill(2)}/{month_num}/{year}"
-            document.location = f"{city_clean} - SP"
-            break
-        
-        if not document.date:
-            date_patterns = [r'Emissão da Proposta:\s*(\d{2}/\d{2}/\d{4})', r'(\d{1,2})\s*de\s*([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑa-záàâãéèêíïóôõöúçñ]+)\s*de\s*(\d{4})', r'\b(\d{2}/\d{2}/\d{4})\b']
-            
-            for pattern in date_patterns:
-                date_match = re.search(pattern, text, re.IGNORECASE)
-                if date_match:
-                    if len(date_match.groups()) == 3 and 'de' in pattern:
-                        day, month_name, year = date_match.groups()
-                        month_name_clean = month_name.lower().strip()
-                        month_num = months.get(month_name_clean, '01')
-                        document.date = f"{day.zfill(2)}/{month_num}/{year}"
-                    else:
-                        document.date = date_match.group(1)
-                    break
-            
-            if not document.date:
-                date_matches = self.patterns['date'].findall(text)
-                if date_matches: document.date = date_matches[-1] if len(date_matches) > 1 else date_matches[0]
-        
-        location_patterns = [
-            r'Cliente:.*?Cidade:\s*([A-Z\s]+)', 
-            r'([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ\s]+)\s*[-\s]*\s*SP\b',
-            r'([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]+)\s*[-\s,]*\s*\d{2}\s*de\s*\w+\s*de\s*\d{4}',
-            r'([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ]+)\s*[-\s,]*\s*\d{2}/\d{2}/\d{4}'
-        ]
-        
-        for pattern in location_patterns:
-            location_match = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
-            if location_match and len(location_match.groups()) > 0:
-                city = location_match.group(1).strip().upper()
-                if 'JACAREI' in city or 'JACAREÍ' in city or 'JACARE' in city:
-                    city = 'JACAREI'
-                document.location = f"{city} - SP"
-                break
         
         return document
     
@@ -444,12 +504,11 @@ class ProposalExtractor(LoggerMixin):
             brand_match = re.search(r'Marca:\s*\n?\s*([A-Z\s]+)', section_text)
             if brand_match: new_vehicle.brand = brand_match.group(1).strip()
             
-            # CKDEV-NOTE: Improved color extraction to handle complex color names
             color_patterns = [
-                r'Cor:\s*\n?\s*([A-Z\s]+)',
-                r'Cor\s*:\s*([A-Z\s]+)',
+                r'Cor:\s*([A-Z\s]+?)(?:\s+Ano|\s*\n|$)',
+                r'Cor\s*:\s*([A-Z\s]+?)(?:\s+Ano|\s*\n|$)',
                 r'([A-Z\s]+)\s*\(cor\)',
-                r'Cor\s*([A-Z\s]+)'
+                r'Cor\s*([A-Z\s]+?)(?:\s+Ano|\s*\n|$)'
             ]
             
             for pattern in color_patterns:
@@ -457,6 +516,10 @@ class ProposalExtractor(LoggerMixin):
                 if color_match: 
                     color_raw = color_match.group(1).strip()
                     color_clean = color_raw.replace('\n', ' ').replace('  ', ' ').strip()
+                    
+                    
+                    color_clean = re.sub(r'\b(?:ANO|FAB|MOD|FABMOD|FABRICACAO|MODELO)\b.*$', '', color_clean, flags=re.IGNORECASE).strip()
+                    
                     if color_clean and len(color_clean) > 1:
                         new_vehicle.color = color_clean.upper()
                         break
@@ -485,10 +548,22 @@ class ProposalExtractor(LoggerMixin):
         for wrong, correct in corrections.items():
             if wrong in model: model = model.replace(wrong, correct)
         
-        if 'FLEXP' in model and 'RPERTEO' in model: model = re.sub(r'FLEXP\s+RPERTEO.*', 'FLEX', model)
-        elif 'RPERTEO' in model: model = re.sub(r'\s*RPERTEO.*', '', model)
-        elif any(corrupt in model for corrupt in ['RMEATNOUAL', 'RMEATNUAL', 'RMEATN']): model = re.sub(r'\s*RMEATN[OUAL]*.*', '', model)
-        elif any(corrupt in model for corrupt in ['AUTOPMR', 'RÁETTI', 'TIOCO']): model = re.sub(r'\s+AUTO[A-Z]*$', ' AU', model, flags=re.IGNORECASE); model = re.sub(r'\s+AUTOPMR.*$', ' AU', model, flags=re.IGNORECASE)
+        if 'FLEXP' in model and 'RPERTEOMIER' in model: 
+            model = re.sub(r'FLEXP\s+RPERTEOMIER.*', '', model)
+        elif 'FLEXP' in model and 'RPERTEO' in model: 
+            model = re.sub(r'FLEXP\s+RPERTEO.*', '', model)
+        elif 'RPERTEOMIER' in model: 
+            model = re.sub(r'\s*RPERTEOMIER.*', '', model)
+        elif 'RPERTEO' in model: 
+            model = re.sub(r'\s*RPERTEO.*', '', model)
+        elif any(corrupt in model for corrupt in ['RMEATNOUAL', 'RMEATNUAL', 'RMEATN']): 
+            model = re.sub(r'\s*RMEATN[OUAL]*.*', '', model)
+        elif any(corrupt in model for corrupt in ['AUTOPMR', 'RÁETTI', 'TIOCO']): 
+            model = re.sub(r'\s+AUTO[A-Z]*$', ' AU', model, flags=re.IGNORECASE)
+            model = re.sub(r'\s+AUTOPMR.*$', ' AU', model, flags=re.IGNORECASE)
+        
+        
+        model = re.sub(r'\b(?:AUTOMATIC|FLEXP|RPERTEOMIER|RPERTEO)\b.*$', '', model, flags=re.IGNORECASE)
         
         model = re.sub(r'[^A-Z0-9\s\.\-/]', ' ', model)
         
@@ -502,9 +577,6 @@ class ProposalExtractor(LoggerMixin):
         
         model = re.sub(r'\s+', ' ', model).strip()
         
-        known_models = {r'^JETTA.*1\.4.*250.*TSI.*': 'JETTA 1.4 250 TSI', r'^NIVUS.*HIGHLINE.*200.*TSI.*': 'NIVUS HIGHLINE 200 TSI', r'^T-?CROSS.*200.*TSI.*': 'T-CROSS 200 TSI', r'^VIRTUS.*1\.0.*200.*TSI.*': 'VIRTUS 1.0 200 TSI', r'^POLO.*1\.0.*200.*TSI.*': 'POLO 1.0 200 TSI', r'^UP.*1\.0.*TSI.*': 'UP 1.0 TSI', r'^TRACKER.*': 'TRACKER'}
-        for pattern, normalized in known_models.items():
-            if re.search(pattern, model, re.IGNORECASE): model = normalized; break
         
         model = re.sub(r'\s+(TOTAL[A-Z]*|FLEX|R-LINE|TIPT)\s*$', '', model, flags=re.IGNORECASE)
         
@@ -517,13 +589,141 @@ class ProposalExtractor(LoggerMixin):
         if not model: return ""
         
         try:
-            try:
-                from ..utils.brand_lookup import get_brand_lookup
-            except ImportError:
-                from utils.brand_lookup import get_brand_lookup
+            model_upper = model.upper().strip()
             
-            brand_lookup = get_brand_lookup()
-            brand = brand_lookup.get_brand_from_model(model)
-            return brand if brand else ""
-        except Exception as e:
+            if model_upper in self.model_to_brand:
+                return self.model_to_brand[model_upper]
+            
+            model_words = model_upper.split()
+            if model_words:
+                main_model = model_words[0]  # Primeira palavra (ex: TRACKER)
+                if main_model in self.model_to_brand:
+                    return self.model_to_brand[main_model]
+            
+            if len(model_words) >= 2:
+                # Tenta combinações como "TRACKER 1.2", "POLO 1.0", etc.
+                for i in range(2, len(model_words) + 1):
+                    partial_model = " ".join(model_words[:i])
+                    if partial_model in self.model_to_brand:
+                        return self.model_to_brand[partial_model]
+            
+            for dict_model, brand in self.model_to_brand.items():
+                # Verifica se a primeira palavra do modelo extraído está no dicionário
+                if model_words and model_words[0] in dict_model:
+                    return brand
+            
             return ""
+            
+        except Exception as e:
+            self.log_error(e, "_extract_brand_from_model", model=model)
+            return ""
+    
+    # Métodos adicionais do pdf_extractor.py
+    def validate_extraction(self, data: ExtractedData) -> Dict[str, bool]:
+        return {
+            'client_name': bool(data.client.name), 
+            'client_cpf': bool(data.client.cpf), 
+            'client_rg': bool(data.client.rg),
+            'vehicle_model': bool(data.vehicle.model), 
+            'vehicle_plate': bool(data.vehicle.plate), 
+            'vehicle_chassis': bool(data.vehicle.chassis),
+            'document_date': bool(data.document.date)
+        }
+    
+    def extract_cnh_data(self, cnh_pdf_path: str) -> ThirdPartyData:
+        """Extrai dados da CNH Digital usando extrator especializado"""
+        try:
+            cnh_extractor = CNHExtractor()
+            extracted_data = cnh_extractor.extract_from_file(cnh_pdf_path)
+            
+            return ThirdPartyData(
+                name=extracted_data.get('nome', ''),
+                cpf=extracted_data.get('cpf', ''),
+                rg=extracted_data.get('rg', '')
+            )
+        except Exception as e:
+            return ThirdPartyData(name='', cpf='', rg='')
+    
+    def extract_payment_data(self, payment_pdf_path: str) -> Optional[PaymentData]:
+        """Extrai dados de pagamento de um comprovante PDF usando extrator especializado"""
+        try:
+            from .payment_receipt_extractor import PaymentReceiptExtractor
+            payment_extractor = PaymentReceiptExtractor()
+            
+            extracted_data = payment_extractor.extract_from_file(payment_pdf_path)
+            
+            return PaymentData(
+                amount=str(extracted_data.get('valor_pago', '')) if extracted_data.get('valor_pago') is not None else '',
+                payment_method=str(extracted_data.get('metodo_pagamento', '')) if extracted_data.get('metodo_pagamento') is not None else '',
+                bank_name=str(extracted_data.get('banco_pagador', '')) if extracted_data.get('banco_pagador') is not None else '',
+                agency=str(extracted_data.get('agencia_pagador', '')) if extracted_data.get('agencia_pagador') is not None else '',
+                account=str(extracted_data.get('conta_pagador', '')) if extracted_data.get('conta_pagador') is not None else ''
+            )
+        except Exception as e:
+            return None
+    
+    def extract_address_data(self, address_pdf_path: str) -> Dict[str, str]:
+        try:
+            from .address_extractor import extract_address_from_bill
+            
+            extracted_data = extract_address_from_bill(address_pdf_path)
+            
+            if extracted_data and extracted_data.get('LOGRADOURO'):
+                address_parts = []
+                if extracted_data['LOGRADOURO']:
+                    address_parts.append(extracted_data['LOGRADOURO'])
+                if extracted_data['NUMERO']:
+                    address_parts.append(extracted_data['NUMERO'])
+                if extracted_data['COMPLEMENTO']:
+                    address_parts.append(extracted_data['COMPLEMENTO'])
+                if extracted_data['BAIRRO']:
+                    address_parts.append(f"BAIRRO {extracted_data['BAIRRO']}")
+                if extracted_data['CEP']:
+                    address_parts.append(f"CEP {extracted_data['CEP']}")
+                if extracted_data['CIDADE'] and extracted_data['ESTADO']:
+                    address_parts.append(f"{extracted_data['CIDADE']} - {extracted_data['ESTADO']}")
+                
+                full_address = ', '.join(filter(None, address_parts))
+                
+                return {
+                    'address': full_address,
+                    'city': extracted_data['CIDADE'] or '',
+                    'cep': extracted_data['CEP'] or '',
+                    'structured_data': extracted_data
+                }
+            
+            return {'address': '', 'city': '', 'cep': ''}
+            
+        except Exception as e:
+            pass
+            return {'address': '', 'city': '', 'cep': ''}
+    
+    def combine_third_party_data(self, cnh_pdf_path: str, address_pdf_path: str) -> ThirdPartyData:
+        try:
+            third_party = self.extract_cnh_data(cnh_pdf_path)
+            address_data = self.extract_address_data(address_pdf_path)
+            
+            third_party.address = address_data['address']
+            third_party.city = address_data['city']
+            third_party.cep = address_data['cep']
+            
+            if 'structured_data' in address_data:
+                third_party._extracted_address_data = address_data
+            
+            third_party = self._cross_validate_third_party_data(third_party, address_data)
+            
+            return third_party
+            
+        except Exception: 
+            return ThirdPartyData()
+    
+    def _cross_validate_third_party_data(self, third_party: ThirdPartyData, address_data: Dict[str, str]) -> ThirdPartyData:
+        if third_party.cep and third_party.city:
+            cep_digits = third_party.cep.replace('-', '')
+        
+        if third_party.address and third_party.city and third_party.cep:
+            if third_party.cep not in third_party.address:
+                full_address = f"{third_party.address}, CEP {third_party.cep}, {third_party.city}"
+                third_party.address = full_address
+        
+        return third_party

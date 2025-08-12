@@ -51,7 +51,7 @@ def create_document_controller(
             backend_root = Path(__file__).parent.parent.parent
             if str(backend_root) not in sys.path:
                 sys.path.insert(0, str(backend_root))
-            from extractors.pdf_extractor import PDFDataExtractor
+            from extractors import PDFDataExtractor
             pdf_extractor = PDFDataExtractor()
             
             extracted_data = pdf_extractor.extract_data(main_pdf_path)

@@ -3,11 +3,13 @@ import re
 from typing import Dict, Any
 try: 
     from ..data import ExtractedData
+    from ..utils import format_currency_value
 except ImportError: 
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from data import ExtractedData
+    from utils import format_currency_value
 
 class TemplateReplacementManager:
     def __init__(self): 
@@ -31,16 +33,20 @@ class TemplateReplacementManager:
             replacements['{{USED_VEHICLE_BRAND}}'] = data.vehicle.brand or ''
             replacements['{{USED_VEHICLE_MODEL}}'] = data.vehicle.model or ''
             replacements['{{USED_VEHICLE_CHASSI}}'] = data.vehicle.chassis or ''
+            replacements['{{USED_VEHICLE_CHASSIS}}'] = data.vehicle.chassis or ''
             replacements['{{USED_VEHICLE_COLOR}}'] = data.vehicle.color or ''
             replacements['{{USED_VEHICLE_PLATE}}'] = data.vehicle.plate or ''
             replacements['{{USED_VEHICLE_YEAR_MODEL}}'] = data.vehicle.year_model or ''
-            replacements['{{USED_VEHICLE_CREDIT}}'] = self._format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00'
+            replacements['{{USED_VEHICLE_CREDIT}}'] = format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00'
             # CKDEV-NOTE: Dynamic chassis key removed - was causing empty separator errors
         
         if data.vehicle:
             if hasattr(data.vehicle, 'format_with_commas'): 
                 replacements['DADOS_VEICULO_FORMATADO'] = data.vehicle.format_with_commas()
-            brand = data.vehicle.brand or self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ''
+            # CKDEV-NOTE: Consistent brand extraction logic aligned with pp_extractor.py
+            brand = data.vehicle.brand
+            if not brand or not brand.strip():
+                brand = self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ''
             replacements.update({
                 'MARCA_VEICULO': brand, 
                 'MODELO_VEICULO': data.vehicle.model or '', 
@@ -81,7 +87,7 @@ class TemplateReplacementManager:
             replacements['DATA_JACAREI'] = data_jacarei
         
         if data.vehicle and data.vehicle.value: 
-            valor_formatado = self._format_currency_value(data.vehicle.value)
+            valor_formatado = format_currency_value(data.vehicle.value)
             replacements.update({
                 'VALOR_VEICULO_VENDIDO': valor_formatado, 
                 '{{VALOR_VEICULO_VENDIDO}}': valor_formatado
@@ -249,7 +255,7 @@ class TemplateReplacementManager:
             })
         
         if data.payment:
-            formatted_amount = self._format_currency_value(data.payment.amount)
+            formatted_amount = format_currency_value(data.payment.amount)
             amount_written = self._convert_amount_to_words(data.payment.amount)
             
             replacements.update({
@@ -295,7 +301,7 @@ class TemplateReplacementManager:
             })
         
         if data.new_vehicle:
-            valor_novo = self._format_currency_value(data.new_vehicle.value) if data.new_vehicle.value else ''
+            valor_novo = format_currency_value(data.new_vehicle.value) if data.new_vehicle.value else ''
             
             replacements.update({
                 '{{NEW_VEHICLE_BRAND}}': data.new_vehicle.brand or '',
@@ -362,20 +368,27 @@ class TemplateReplacementManager:
             })
         
         if data.vehicle:
+            # CKDEV-NOTE: Consistent brand extraction logic aligned with pp_extractor.py
+            used_vehicle_brand = data.vehicle.brand
+            if not used_vehicle_brand or not used_vehicle_brand.strip():
+                used_vehicle_brand = self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else ''
+            
             replacements.update({
-                '{{USED_VEHICLE_BRAND}}': data.vehicle.brand or self._extract_brand_from_model(data.vehicle.model) if data.vehicle.model else '',
+                '{{USED_VEHICLE_BRAND}}': used_vehicle_brand,
                 '{{USED_VEHICLE_MODEL}}': data.vehicle.model or '',
                 '{{USED_VEHICLE_CHASSI}}': data.vehicle.chassis or '',
+                '{{USED_VEHICLE_CHASSIS}}': data.vehicle.chassis or '',
                 '{{USED_VEHICLE_COLOR}}': data.vehicle.color or '',
                 '{{USED_VEHICLE_PLATE}}': data.vehicle.plate or '',
                 '{{USED_VEHICLE_YEAR_MODEL}}': data.vehicle.year_model or '',
-                'USED_VEHICLE_CREDIT': self._format_currency_value(data.vehicle.value) if data.vehicle.value else ''
+                'USED_VEHICLE_CREDIT': format_currency_value(data.vehicle.value) if data.vehicle.value else ''
             })
         else:
             replacements.update({
                 '{{USED_VEHICLE_BRAND}}': '',
                 '{{USED_VEHICLE_MODEL}}': '',
                 '{{USED_VEHICLE_CHASSI}}': '',
+                '{{USED_VEHICLE_CHASSIS}}': '',
                 '{{USED_VEHICLE_COLOR}}': '',
                 '{{USED_VEHICLE_PLATE}}': '',
                 '{{USED_VEHICLE_YEAR_MODEL}}': '',
@@ -383,12 +396,13 @@ class TemplateReplacementManager:
             })
         
         if data.new_vehicle:
-            valor_novo = self._format_currency_value(data.new_vehicle.value) if data.new_vehicle.value else ''
+            valor_novo = format_currency_value(data.new_vehicle.value) if data.new_vehicle.value else ''
             replacements.update({
                 '{{NEW_VEHICLE_BRAND}}': data.new_vehicle.brand or '',
                 '{{NEW_VEHICLE_MODEL}}': data.new_vehicle.model or '',
                 '{{NEW_VEHICLE_COLOR}}': data.new_vehicle.color or '',
                 '{{NEW_VEHICLE_CHASSI}}': data.new_vehicle.chassis or '',
+                '{{NEW_VEHICLE_CHASSIS}}': data.new_vehicle.chassis or '',
                 '{{NEW_VEHICLE_YEAR_MODEL}}': data.new_vehicle.year_model or '',
                 '{{NEW_VEHICLE_PRICE}}': valor_novo,
                 'MARCA_VEICULO_NOVO': data.new_vehicle.brand or '',
@@ -406,6 +420,7 @@ class TemplateReplacementManager:
                 '{{NEW_VEHICLE_MODEL}}': '',
                 '{{NEW_VEHICLE_COLOR}}': '',
                 '{{NEW_VEHICLE_CHASSI}}': '',
+                '{{NEW_VEHICLE_CHASSIS}}': '',
                 '{{NEW_VEHICLE_YEAR_MODEL}}': '',
                 '{{NEW_VEHICLE_PRICE}}': '',
                 'MARCA_VEICULO_NOVO': '',
@@ -435,24 +450,6 @@ class TemplateReplacementManager:
         except Exception:
             return ""
     
-    def _format_currency_value(self, value_str: str) -> str:
-        if not value_str or not value_str.strip(): 
-            return ""
-        try:
-            import re
-            clean_value = re.sub(r'[^\d.,]', '', value_str.strip())
-            if ',' in clean_value and clean_value.count(',') == 1: 
-                parts = clean_value.split(',')
-                return f"R$ {clean_value}" if len(parts) == 2 and len(parts[1]) == 2 else f"R$ {value_str}"
-            if '.' in clean_value: 
-                float_value = float(clean_value)
-                formatted = f"{float_value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                return f"R$ {formatted}"
-            else: 
-                num_value = int(clean_value)
-                return f"R$ {num_value},00" if num_value <= 999 else f"R$ {f'{num_value:,}'.replace(',', '.')},00"
-        except (ValueError, TypeError): 
-            return ""
     
     def _format_cpf(self, cpf: str) -> str:
         if not cpf:

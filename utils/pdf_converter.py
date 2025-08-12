@@ -1,5 +1,6 @@
 import os
 import sys
+import platform
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -14,6 +15,16 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils.logging_config import LoggerMixin
 
+# CKDEV-NOTE: Import Linux-compatible converter
+try:
+    from .linux_pdf_converter import convert_docx_to_pdf_linux, is_linux
+except ImportError:
+    try:
+        from linux_pdf_converter import convert_docx_to_pdf_linux, is_linux
+    except ImportError:
+        convert_docx_to_pdf_linux = None
+        is_linux = lambda: False
+
 
 class PDFConverter(LoggerMixin):
     """Conversor de DOCX para PDF com tratamento robusto de erros"""
@@ -23,8 +34,9 @@ class PDFConverter(LoggerMixin):
         self._validate_dependencies()
     
     def _validate_dependencies(self):
-        if convert is None:
-            raise ImportError("docx2pdf library not found. Install with: pip install docx2pdf")
+        # CKDEV-NOTE: Allow operation with any available converter
+        if convert is None and convert_docx_to_pdf_linux is None:
+            raise ImportError("No PDF converter available. Install LibreOffice or docx2pdf library. pip install docx2pdf python-docx reportlab")
     
     def convert_to_pdf(self, docx_path: str, pdf_path: Optional[str] = None) -> Tuple[bool, str, Optional[str]]:
         """
@@ -53,25 +65,36 @@ class PDFConverter(LoggerMixin):
             
             self.logger.info(f"Converting {docx_path} to {pdf_path}")
             
-            # CKDEV-NOTE: Tentar conversão com docx2pdf
-            try:
-                convert(docx_path, pdf_path)
-                
-                if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
-                    self.logger.info(f"PDF created successfully: {pdf_path}")
-                    return True, f"PDF gerado com sucesso: {os.path.basename(pdf_path)}", pdf_path
-                else:
-                    return False, "PDF foi criado mas parece estar vazio ou corrompido", None
+            # CKDEV-NOTE: Try cross-platform converter first (LibreOffice + ReportLab)
+            if convert_docx_to_pdf_linux:
+                self.logger.info("Using cross-platform PDF converter (LibreOffice/ReportLab)")
+                return convert_docx_to_pdf_linux(docx_path, pdf_path)
+            
+            # CKDEV-NOTE: Fall back to docx2pdf if available (Windows only)
+            if convert is not None:
+                self.logger.info("Using Windows-specific docx2pdf converter")
+                try:
+                    convert(docx_path, pdf_path)
                     
-            except Exception as convert_error:
-                # CKDEV-NOTE: Verificar se é um erro específico do Windows/Word
-                error_str = str(convert_error).lower()
-                if "word" in error_str or "office" in error_str or "com" in error_str:
-                    return False, f"Erro de conversão: Microsoft Word não está disponível ou não pode ser acessado. Erro: {convert_error}", None
-                elif "permission" in error_str or "access" in error_str:
-                    return False, f"Erro de permissão: Verifique se o arquivo não está aberto em outro programa. Erro: {convert_error}", None
-                else:
-                    return False, f"Erro na conversão para PDF: {convert_error}", None
+                    if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
+                        self.logger.info(f"PDF created successfully: {pdf_path}")
+                        return True, f"PDF gerado com sucesso: {os.path.basename(pdf_path)}", pdf_path
+                    else:
+                        return False, "PDF foi criado mas parece estar vazio ou corrompido", None
+                        
+                except Exception as convert_error:
+                    # CKDEV-NOTE: Verificar se é um erro específico do Windows/Word
+                    error_str = str(convert_error).lower()
+                    if "word" in error_str or "office" in error_str or "com" in error_str:
+                        self.logger.warning("Windows docx2pdf failed - MS Word not available")
+                        return False, f"Erro de conversão: Microsoft Word não está disponível. Instale LibreOffice para conversão alternativa.", None
+                    elif "permission" in error_str or "access" in error_str:
+                        return False, f"Erro de permissão: Verifique se o arquivo não está aberto em outro programa. Erro: {convert_error}", None
+                    else:
+                        return False, f"Erro na conversão para PDF: {convert_error}", None
+            
+            # CKDEV-NOTE: No conversion methods available
+            return False, "Nenhum método de conversão PDF disponível. Instale LibreOffice ou docx2pdf.", None
         
         except Exception as e:
             error_msg = f"Erro na conversão para PDF: {str(e)}"
@@ -85,7 +108,7 @@ class PDFConverter(LoggerMixin):
     
     @staticmethod
     def is_conversion_available() -> bool:
-        return convert is not None
+        return convert is not None or convert_docx_to_pdf_linux is not None
 
 
 def convert_docx_to_pdf(docx_path: str, pdf_path: Optional[str] = None) -> Tuple[bool, str, Optional[str]]:

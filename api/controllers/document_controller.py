@@ -3,6 +3,8 @@
 from flask import Blueprint, request, current_app
 from marshmallow import ValidationError as MarshmallowValidationError
 
+from ..config import get_config
+
 from ..services import FileService, SessionService, PDFConversionService
 from ..exceptions import (
     ValidationError, 
@@ -260,11 +262,14 @@ def create_document_controller(
                 logger.error(f"PDF conversion failed during generation: {e}", exc_info=True)
                 logger.info(f"Document generation will continue with DOCX only: {output_filename.name}")
             
+            config = get_config()
+            api_base_url = config.API_BASE_URL
+            
             response_data = {
                 "output_filename": output_filename.name,
-                "download_url": f"/api/files/download/{output_filename.name}?dir=output",
+                "download_url": f"{api_base_url}/api/files/download/{output_filename.name}?dir=output",
                 "pdf_filename": pdf_filename,
-                "pdf_download_url": f"/api/files/download/{pdf_filename}?dir=output" if pdf_filename else None,
+                "pdf_download_url": f"{api_base_url}/api/files/download/{pdf_filename}?dir=output" if pdf_filename else None,
                 "formats_available": formats_available,
                 "template_type": session.template_type.value
             }

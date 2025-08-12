@@ -1,6 +1,7 @@
 from flask import Blueprint, request, send_file, make_response, current_app
 from marshmallow import ValidationError as MarshmallowValidationError
 
+from ..config import get_config
 from ..services import FileService, PDFConversionService
 from ..exceptions import ValidationError, FileNotFoundError, SecurityError
 from ..utils.helpers import ResponseBuilder, RequestHelper, FileHelper
@@ -198,12 +199,14 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             pdf_path = pdf_service.convert_docx_to_pdf(file_path)
             
             if pdf_path:
+                config = get_config()
+                api_base_url = config.API_BASE_URL
                 logger.info(f"PDF conversion successful: {filename} -> {pdf_path.name}")
                 return ResponseBuilder.success(
                     data={
                         "original_file": filename,
                         "pdf_file": pdf_path.name,
-                        "download_url": f"/api/files/download/{pdf_path.name}"
+                        "download_url": f"{api_base_url}/api/files/download/{pdf_path.name}"
                     },
                     message="Conversion successful"
                 ), 200

@@ -62,6 +62,9 @@ class Config:
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     
+    # CKDEV-NOTE: API base URL for generating download URLs
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
+    
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", REDIS_URL)

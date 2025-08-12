@@ -1,5 +1,6 @@
 import os
 import sys
+import platform
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -14,6 +15,16 @@ except ImportError:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils.logging_config import LoggerMixin
 
+# CKDEV-NOTE: Import LibreOffice converter for Linux
+try:
+    from .simple_pdf_converter import convert_with_libreoffice, is_linux
+except ImportError:
+    try:
+        from simple_pdf_converter import convert_with_libreoffice, is_linux
+    except ImportError:
+        convert_with_libreoffice = None
+        is_linux = lambda: False
+
 
 class PDFConverter(LoggerMixin):
     """Conversor de DOCX para PDF com tratamento robusto de erros"""
@@ -23,8 +34,13 @@ class PDFConverter(LoggerMixin):
         self._validate_dependencies()
     
     def _validate_dependencies(self):
-        if convert is None:
-            raise ImportError("docx2pdf library not found. Install with: pip install docx2pdf")
+        # CKDEV-NOTE: Check for appropriate converter based on OS
+        if is_linux():
+            if convert_with_libreoffice is None:
+                raise ImportError("LibreOffice converter not available for Linux")
+        else:
+            if convert is None:
+                raise ImportError("docx2pdf library not found. Install with: pip install docx2pdf")
     
     def convert_to_pdf(self, docx_path: str, pdf_path: Optional[str] = None) -> Tuple[bool, str, Optional[str]]:
         """
@@ -53,7 +69,13 @@ class PDFConverter(LoggerMixin):
             
             self.logger.info(f"Converting {docx_path} to {pdf_path}")
             
+            # CKDEV-NOTE: Use LibreOffice on Linux, docx2pdf on Windows
+            if is_linux() and convert_with_libreoffice:
+                self.logger.info("Using LibreOffice for PDF conversion (Linux)")
+                return convert_with_libreoffice(docx_path, pdf_path)
+            
             try:
+                self.logger.info("Using docx2pdf for PDF conversion (Windows)")
                 convert(docx_path, pdf_path)
                 
                 if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:

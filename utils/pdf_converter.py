@@ -77,54 +77,111 @@ class PDFConverter(LoggerMixin):
             
             self.logger.info(f"Converting {docx_path} to {pdf_path}")
             
-            # CKDEV-NOTE: Priority order: OS-specific converter first, then cross-platform fallback
-            if is_linux():
-                # CKDEV-NOTE: Linux - try LibreOffice first, then cross-platform converter
-                if convert_with_libreoffice:
-                    self.logger.info("Using LibreOffice for PDF conversion (Linux)")
-                    return convert_with_libreoffice(docx_path, pdf_path)
-                elif convert_docx_to_pdf_linux:
-                    self.logger.info("Using cross-platform PDF converter (ReportLab)")
-                    return convert_docx_to_pdf_linux(docx_path, pdf_path)
+            # CKDEV-NOTE: Enhanced Windows-focused conversion with proper error handling
+            if platform.system().lower() == 'windows' and convert is not None:
+                self.logger.info("Using docx2pdf for Windows PDF conversion")
+                return self._convert_docx2pdf_windows(docx_path, pdf_path)
+            elif convert_with_libreoffice:
+                self.logger.info("Using LibreOffice for PDF conversion")
+                return convert_with_libreoffice(docx_path, pdf_path)
+            elif convert is not None:
+                self.logger.info("Using docx2pdf as fallback")
+                return self._convert_docx2pdf_windows(docx_path, pdf_path)
             else:
-                # CKDEV-NOTE: Windows - try docx2pdf first, then cross-platform converter
-                if convert is not None:
-                    self.logger.info("Using docx2pdf for PDF conversion (Windows)")
-                    try:
-                        convert(docx_path, pdf_path)
-                        
-                        if os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0:
-                            self.logger.info(f"PDF created successfully: {pdf_path}")
-                            return True, f"PDF gerado com sucesso: {os.path.basename(pdf_path)}", pdf_path
-                        else:
-                            return False, "PDF foi criado mas parece estar vazio ou corrompido", None
-                            
-                    except Exception as convert_error:
-                        error_str = str(convert_error).lower()
-                        if "word" in error_str or "office" in error_str or "com" in error_str:
-                            self.logger.warning("docx2pdf failed - MS Word not available, trying fallback")
-                            # CKDEV-NOTE: Try cross-platform converter as fallback
-                            if convert_docx_to_pdf_linux:
-                                return convert_docx_to_pdf_linux(docx_path, pdf_path)
-                            return False, f"Erro de conversão: Microsoft Word não está disponível. Instale LibreOffice para conversão alternativa.", None
-                        elif "permission" in error_str or "access" in error_str:
-                            return False, f"Erro de permissão: Verifique se o arquivo não está aberto em outro programa. Erro: {convert_error}", None
-                        else:
-                            return False, f"Erro na conversão para PDF: {convert_error}", None
-                
-                # CKDEV-NOTE: Try cross-platform converter if docx2pdf not available
-                elif convert_docx_to_pdf_linux:
-                    self.logger.info("Using cross-platform PDF converter (ReportLab)")
-                    return convert_docx_to_pdf_linux(docx_path, pdf_path)
-            
-            # CKDEV-NOTE: No conversion methods available
-            return False, "Nenhum método de conversão PDF disponível. Instale LibreOffice ou docx2pdf.", None
+                return False, "Nenhum método de conversão PDF disponível. Instale docx2pdf ou LibreOffice.", None
         
         except Exception as e:
             error_msg = f"Erro na conversão para PDF: {str(e)}"
             self.logger.error(error_msg)
             return False, error_msg, None
     
+    def _convert_docx2pdf_windows(self, docx_path: str, pdf_path: str) -> Tuple[bool, str, Optional[str]]:
+        """Enhanced docx2pdf conversion for Windows with comprehensive error handling"""
+        if convert is None:
+            return False, "docx2pdf library not available", None
+            
+        try:
+            # CKDEV-NOTE: Ensure paths are absolute and normalized
+            docx_path_abs = os.path.abspath(docx_path)
+            pdf_path_abs = os.path.abspath(pdf_path)
+            
+            self.logger.info(f"Converting: {docx_path_abs} -> {pdf_path_abs}")
+            
+            # CKDEV-NOTE: Clean up any existing PDF file first
+            if os.path.exists(pdf_path_abs):
+                try:
+                    os.remove(pdf_path_abs)
+                    self.logger.info(f"Removed existing PDF: {pdf_path_abs}")
+                except OSError as cleanup_error:
+                    self.logger.warning(f"Could not remove existing PDF: {cleanup_error}")
+            
+            # CKDEV-NOTE: Try docx2pdf conversion with timeout protection
+            import threading
+            import time
+            
+            conversion_result = {'success': False, 'error': None}
+            
+            def convert_worker():
+                try:
+                    convert(docx_path_abs, pdf_path_abs)
+                    conversion_result['success'] = True
+                except Exception as e:
+                    conversion_result['error'] = e
+            
+            # CKDEV-NOTE: Run conversion in thread with timeout
+            thread = threading.Thread(target=convert_worker)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=60)  # 60 second timeout
+            
+            if thread.is_alive():
+                self.logger.error("docx2pdf conversion timed out after 60 seconds")
+                return False, "docx2pdf conversion timed out", None
+            
+            if conversion_result.get('error'):
+                raise conversion_result['error']
+            
+            # CKDEV-NOTE: Comprehensive validation of generated PDF
+            if not os.path.exists(pdf_path_abs):
+                return False, f"docx2pdf completed but no PDF file found at {pdf_path_abs}", None
+            
+            file_size = os.path.getsize(pdf_path_abs)
+            if file_size == 0:
+                os.remove(pdf_path_abs)
+                return False, "docx2pdf generated empty PDF file", None
+            
+            if file_size < 100:  # PDFs should be at least 100 bytes
+                os.remove(pdf_path_abs)
+                return False, f"docx2pdf generated suspiciously small PDF ({file_size} bytes)", None
+            
+            # CKDEV-NOTE: Validate PDF header
+            try:
+                with open(pdf_path_abs, 'rb') as f:
+                    header = f.read(4)
+                    if not header.startswith(b'%PDF'):
+                        os.remove(pdf_path_abs)
+                        return False, "docx2pdf generated invalid PDF (bad header)", None
+            except Exception as header_error:
+                self.logger.warning(f"Could not validate PDF header: {header_error}")
+            
+            self.logger.info(f"docx2pdf conversion successful: {pdf_path_abs} ({file_size} bytes)")
+            return True, f"PDF gerado com sucesso ({file_size} bytes)", pdf_path_abs
+                
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            # CKDEV-NOTE: Handle specific Windows/Office errors
+            if any(keyword in error_str for keyword in ['word', 'office', 'com', 'ole']):
+                return False, "Microsoft Word/Office não está disponível ou não está funcionando corretamente", None
+            elif any(keyword in error_str for keyword in ['permission', 'access', 'denied']):
+                return False, f"Erro de permissão: {e}", None
+            elif 'timeout' in error_str:
+                return False, f"Conversão demorou muito para completar: {e}", None
+            else:
+                self.logger.error(f"docx2pdf unexpected error: {e}")
+                return False, f"Erro na conversão docx2pdf: {e}", None
+    
+
     def _generate_pdf_path(self, docx_path: str) -> str:
         docx_file = Path(docx_path)
         pdf_path = docx_file.with_suffix('.pdf')

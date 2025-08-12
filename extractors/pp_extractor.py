@@ -346,30 +346,16 @@ class ProposalExtractor(LoggerMixin):
                 break
                 
         color_patterns = [
-            # CKDEV-NOTE: Padrão específico para estrutura de tabela com placa
+
             rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
-            
-            # CKDEV-NOTE: Padrões específicos para estruturas com FL/FLEX
             r'TURBO\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
             r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
             r'[A-Z0-9\s\.\-]+\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
-            
-            # CKDEV-NOTE: Padrão explícito "Cor:" ignorando linha de cabeçalho
             r'Cor:\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+?)(?:\s*Valor|\s*Fab/Mod|\s*Avaliação|\s*\d{1,3}\.\d{3},\d{2}|\n)(?!\s*Valor)',
-            
-            # CKDEV-NOTE: Cores seguidas de valores monetários (evitando cabeçalho)
             r'(?<!Placa\s)(?<!Modelo\s)(?<!Cor\s)(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\s+(?:\d{1,3}\.\d{3},\d{2})',
-            
-            # CKDEV-NOTE: Cores isoladas no início de linha
             r'^(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)$',
-            
-            # CKDEV-NOTE: Cores no contexto geral (mais flexível) excluindo VALOR
             r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b(?!\s+VALOR)(?!\s+Fab/Mod)(?!\s+Chassi)',
-            
-            # CKDEV-NOTE: Padrões para cores compostas ou mais específicas
             r'\b(BRANCO\s+POLAR|PRETO\s+SANTORINI|PRATA\s+REFLEX|AZUL\s+OCEANO|VERDE\s+AMAZONAS|CINZA\s+MOONSTONE|GRAFITE\s+STELLAR)\b',
-            
-            # CKDEV-NOTE: Fallback para qualquer palavra após "Cor" em maiúscula excluindo VALOR
             r'Cor[:\s]+(?!VALOR)([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]*?)(?:\s+(?:Valor|Fab|Mod|Avaliação|\d)|\n|$)',
         ]
         
@@ -396,39 +382,29 @@ class ProposalExtractor(LoggerMixin):
                         pymupdf_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', pymupdf_text, re.DOTALL | re.IGNORECASE)
                         if pymupdf_section:
                             pymupdf_section_text = pymupdf_section.group(0)
-                            # CKDEV-NOTE: Fix para estrutura vertical do PyMuPDF onde cada campo está em linha separada
-                            # Primeiro tentar padrão horizontal (linha única) excluindo VALOR
                             color_pattern_horizontal = r'Cor\s+(?!VALOR)([A-Z\s]+?)(?:\s+Valor|\s+Fab/Mod|\s+Avaliação|\s+\d{1,3}\.\d{3},\d{2}|\n)'
                             pymupdf_color_match = re.search(color_pattern_horizontal, pymupdf_section_text, re.IGNORECASE)
                             if pymupdf_color_match:
                                 extracted_color = pymupdf_color_match.group(1).upper().strip()
-                                # CKDEV-NOTE: Validação adicional para garantir que não é palavra de cabeçalho
                                 if extracted_color not in ['VALOR', 'FAB/MOD', 'CHASSI', 'AVALIACAO', 'COMB', 'KM']:
                                     vehicle.color = extracted_color
-                            
-                            # CKDEV-NOTE: Se não encontrou cor no padrão horizontal, tentar padrão vertical
+
                             if not vehicle.color:
-                                # Procurar por linhas isoladas com cores válidas (padrão vertical)
                                 lines = pymupdf_section_text.split('\n')
                                 for line in lines:
                                     line_clean = line.strip().upper()
-                                    # CKDEV-NOTE: Lista expandida de cores válidas incluindo variações
                                     valid_colors = [
                                         'PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
                                         'CINZA', 'CINZENTO', 'DOURADO', 'OURO', 'VERDE', 'AMARELO', 
                                         'BEGE', 'GRAFITE', 'PÉROLA', 'METÁLICA', 'METALICA',
-                                        # Cores compostas comuns
                                         'BRANCO POLAR', 'PRETO SANTORINI', 'PRATA REFLEX', 
                                         'AZUL OCEANO', 'VERDE AMAZONAS', 'CINZA MOONSTONE', 
                                         'GRAFITE STELLAR'
                                     ]
-                                    
-                                    # Verificação exata
+
                                     if line_clean in valid_colors:
                                         vehicle.color = line_clean
                                         break
-                                    
-                                    # Verificação parcial para cores que podem ter sufixos
                                     for color in valid_colors:
                                         if line_clean.startswith(color) and len(line_clean) <= len(color) + 10:
                                             vehicle.color = line_clean

@@ -65,7 +65,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             
             file_path = file_service.get_file(filename, directory)
 
-            # CKDEV-NOTE: HEAD support — return headers without body for availability checks
+            # CKDEV-NOTE: HEAD support — respond with headers only for availability checks
             if request.method == 'HEAD':
                 content_type = FileHelper.determine_content_type(filename)
                 response = make_response()

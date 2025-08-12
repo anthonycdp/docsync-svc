@@ -39,11 +39,11 @@ class DOCXProcessor(LoggerMixin):
             doc.save(output_path)
             
             try:
-                from ..utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
+                from ..utils.pdf_converter import convert_docx_to_pdf
             except ImportError:
-                from utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
+                from utils.pdf_converter import convert_docx_to_pdf
             
-            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf_hybrid(output_path)
+            pdf_success, pdf_message, pdf_path = convert_docx_to_pdf(output_path)
             if pdf_success:
                 self.logger.info(f"PDF generated successfully: {pdf_path}")
             else:

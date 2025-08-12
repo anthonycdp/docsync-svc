@@ -4,14 +4,14 @@ from typing import Optional
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from utils.hybrid_pdf_converter import convert_docx_to_pdf_hybrid
+from utils.pdf_converter import convert_docx_to_pdf
 from ..exceptions import PDFConversionError
 from ..utils.logger import get_service_logger
 
 
 class PDFConversionService:
     """
-    CKDEV-NOTE: PDF conversion service using hybrid converter (LibreOffice + docx2pdf fallback)
+    CKDEV-NOTE: PDF conversion service using LibreOffice with docx2pdf fallback
     """
     
     def __init__(self, config=None):
@@ -23,10 +23,10 @@ class PDFConversionService:
         pdf_path: Optional[Path] = None
     ) -> Optional[Path]:
         """
-        CKDEV-NOTE: PDF conversion using hybrid approach (LibreOffice preferred, docx2pdf fallback)
+        Convert DOCX to PDF using LibreOffice with docx2pdf fallback
         """
         try:
-            success, message, result_path = convert_docx_to_pdf_hybrid(
+            success, message, result_path = convert_docx_to_pdf(
                 str(docx_path), 
                 str(pdf_path) if pdf_path else None
             )
@@ -35,7 +35,7 @@ class PDFConversionService:
                 self.logger.info(f"PDF generated successfully: {result_path}")
                 return Path(result_path)
             else:
-                self.logger.error(f"Hybrid converter failed: {message}")
+                self.logger.error(f"Conversion failed: {message}")
                 raise PDFConversionError(f"Failed to convert {docx_path.name} to PDF: {message}")
                 
         except Exception as e:

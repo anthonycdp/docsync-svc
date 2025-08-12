@@ -20,10 +20,7 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES: timedelta = timedelta(days=30)
     
     CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001"
+        "https://doc-sync-service.onrender.com/*"
     ]
     CORS_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     CORS_ALLOW_HEADERS: List[str] = ["Content-Type", "Authorization"]

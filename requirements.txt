@@ -12,6 +12,7 @@ APScheduler==3.10.4
 # PDF Processing and OCR
 pdfplumber==0.11.2
 PyPDF2==3.0.1
+PyMuPDF==1.23.30
 pytesseract==0.3.10
 pdf2image==1.17.0
 

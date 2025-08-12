@@ -45,13 +45,13 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             logger.error(f"File upload failed: {e}")
             return ResponseBuilder.error("Upload failed"), 500
     
-    @bp.route('/download/<filename>', methods=['GET', 'OPTIONS'])
+    @bp.route('/download/<filename>', methods=['GET', 'HEAD', 'OPTIONS'])
     def download_file(filename):
         if request.method == 'OPTIONS':
             response = make_response()
             response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
             response.headers.add('Access-Control-Allow-Headers', "Content-Type,Authorization")
-            response.headers.add('Access-Control-Allow-Methods', "GET,OPTIONS")
+            response.headers.add('Access-Control-Allow-Methods', "GET,HEAD,OPTIONS")
             response.headers.add('Access-Control-Expose-Headers', "Content-Disposition,Content-Length")
             return response
         
@@ -64,6 +64,21 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
                 return ResponseBuilder.error("Invalid directory"), 400
             
             file_path = file_service.get_file(filename, directory)
+
+            # CKDEV-NOTE: HEAD support — respond with headers only for availability checks
+            if request.method == 'HEAD':
+                content_type = FileHelper.determine_content_type(filename)
+                response = make_response()
+                response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+                response.headers.add('Access-Control-Expose-Headers', "Content-Disposition,Content-Length")
+                response.headers.add('Access-Control-Allow-Methods', "GET,HEAD,OPTIONS")
+                response.headers['Content-Type'] = content_type
+                try:
+                    response.headers['Content-Length'] = str(file_path.stat().st_size)
+                except Exception:
+                    response.headers['Content-Length'] = '0'
+                response.headers['Content-Disposition'] = f"attachment; filename={filename}"
+                return response, 200
             
             # CKDEV-NOTE: Enhanced PDF validation before download
             if filename.lower().endswith('.pdf'):
@@ -107,7 +122,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             
             response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
             response.headers.add('Access-Control-Expose-Headers', "Content-Disposition,Content-Length")
-            response.headers.add('Access-Control-Allow-Methods', "GET,OPTIONS")
+            response.headers.add('Access-Control-Allow-Methods', "GET,HEAD,OPTIONS")
             
             logger.info(f"File download successful: {filename}")
             return response
@@ -221,7 +236,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
                     data={
                         "original_file": filename,
                         "pdf_file": pdf_path.name,
-                        "download_url": f"{api_base_url}/api/files/download/{pdf_path.name}"
+                        "download_url": f"{api_base_url}/api/files/download/{pdf_path.name}?dir=output"
                     },
                     message="Conversion successful"
                 ), 200

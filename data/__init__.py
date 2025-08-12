@@ -1,0 +1,2 @@
+from .models import (ClientData, VehicleData, DocumentData, PaymentData, PartyData, NewVehicleData, ThirdPartyData, ExtractedData)
+__all__ = ['ClientData', 'VehicleData', 'DocumentData', 'PaymentData', 'PartyData', 'NewVehicleData', 'ThirdPartyData', 'ExtractedData']

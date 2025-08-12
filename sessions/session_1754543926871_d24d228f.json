@@ -1,0 +1,35 @@
+{
+  "session_id": "session_1754543926871_d24d228f",
+  "template_type": "responsabilidade_veiculo",
+  "files_processed": 1,
+  "timestamp": "2025-08-07T02:18:46.871904",
+  "extracted_data": {
+    "client": {
+      "name": "TESTE",
+      "cpf": "123",
+      "rg": "456",
+      "address": "RUA TESTE",
+      "city": "",
+      "cep": ""
+    },
+    "vehicle": {
+      "brand": "TESTE",
+      "model": "TESTE",
+      "plate": "TESTE",
+      "chassis": "TESTE",
+      "color": "TESTE",
+      "year_model": "2024",
+      "value": "1000"
+    },
+    "document": {
+      "date": "07/08/2025",
+      "location": "TESTE",
+      "proposal_number": ""
+    },
+    "payment": null,
+    "parties": null,
+    "new_vehicle": null,
+    "third_party": null
+  },
+  "validation_results": {}
+}

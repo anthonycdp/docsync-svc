@@ -261,8 +261,13 @@ def create_document_controller(
                 return ResponseBuilder.validation_error(e.messages), 400
             
             logger.info(f"Retrieving session: {session_id}")
+            
+            # CKDEV-NOTE: Add detailed session debugging before retrieval
+            logger.info(f"Session service max_age_hours: {session_service.max_age_hours}")
+            logger.info(f"Current session count: {session_service.get_session_count()}")
+            
             session = session_service.get_session(session_id)
-            logger.info(f"Session retrieved: {session}")
+            logger.info(f"Session retrieved successfully: timestamp={session.timestamp}, template={session.template_type.value}")
             
             logger.info("Generating real document...")
             output_filename = _generate_real_document(session, data.get('format_type', 'docx'))

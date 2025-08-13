@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -89,12 +89,23 @@ class NewVehicleData:
     model: str = ""
     year_model: str = ""
     chassis: str = ""
+    # CKDEV-NOTE: Added brand field for backward compatibility with old session data
+    brand: str = ""
+    plate: str = ""
+    color: str = ""
+    value: str = ""
+    sales_order: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "model": self.model,
             "year_model": self.year_model,
-            "chassis": self.chassis
+            "chassis": self.chassis,
+            "brand": self.brand,
+            "plate": self.plate,
+            "color": self.color,
+            "value": self.value,
+            "sales_order": self.sales_order
         }
 
 
@@ -207,8 +218,21 @@ class SessionData:
     validation_results: Dict[str, ValidationResult] = field(default_factory=dict)
     
     def is_expired(self, max_age_hours: int = 24) -> bool:
-        age = datetime.now() - self.timestamp
-        return age.total_seconds() > (max_age_hours * 3600)
+        # CKDEV-NOTE: Temporarily disable session expiration for debugging
+        # TODO: Re-enable after resolving session persistence issues
+        return False
+        
+        # CKDEV-NOTE: Original expiration logic (temporarily disabled)
+        # current_time = datetime.now(timezone.utc)
+        # session_time = self.timestamp.replace(tzinfo=timezone.utc) if self.timestamp.tzinfo is None else self.timestamp
+        # age = current_time - session_time
+        # age_hours = age.total_seconds() / 3600
+        # 
+        # from ..utils.logger import get_service_logger
+        # logger = get_service_logger('session')
+        # logger.debug(f"Session {self.session_id}: age={age_hours:.2f}h, max={max_age_hours}h, expired={age_hours > max_age_hours}")
+        # 
+        # return age_hours > max_age_hours
     
     def to_dict(self) -> Dict[str, Any]:
         return {

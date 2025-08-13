@@ -126,7 +126,7 @@ def create_app(config_name: str = None) -> Flask:
     pdf_service = PDFConversionService(config)
     session_service = SessionService(
         session_dir=config.SESSION_FILE_DIR,
-        max_age_hours=24
+        max_age_hours=72  # CKDEV-NOTE: Increased to 72h to prevent premature session expiration
     )
     file_service = FileService(config)
     

@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, List
 from pathlib import Path
 import json
@@ -38,7 +38,7 @@ class SessionService:
             extracted_data=extracted_data,
             template_type=template_type,
             files_processed=files_processed,
-            timestamp=datetime.now()
+            timestamp=datetime.now(timezone.utc)
         )
         
         with self._lock:
@@ -59,31 +59,53 @@ class SessionService:
         return session_id
     
     def get_session(self, session_id: str) -> SessionData:
+        # CKDEV-NOTE: Enhanced debug logging for session retrieval troubleshooting
+        self.logger.info(f"Getting session: {session_id}")
+        self.logger.info(f"Valid session ID format: {SessionManager.is_valid_session_id(session_id)}")
+        self.logger.info(f"Sessions in memory: {list(self._sessions.keys())}")
+        self.logger.info(f"Session dir configured: {self.session_dir}")
+        
         if not SessionManager.is_valid_session_id(session_id):
+            self.logger.error(f"Invalid session ID format: {session_id}")
             raise SessionNotFoundError(session_id)
         
         with self._lock:
             if session_id in self._sessions:
+                self.logger.info(f"Found session in memory: {session_id}")
                 session = self._sessions[session_id]
                 
+                self.logger.info(f"Session timestamp: {session.timestamp}")
+                self.logger.info(f"Max age hours: {self.max_age_hours}")
+                
                 if session.is_expired(self.max_age_hours):
+                    self.logger.warning(f"Session expired in memory: {session_id}")
                     self._cleanup_session(session_id)
                     raise SessionNotFoundError(session_id)
                 
+                self.logger.info(f"Returning valid session from memory: {session_id}")
                 return session
+        
+        self.logger.info(f"Session not in memory, checking disk: {session_id}")
         
         if self.session_dir:
             session = self._load_session_from_disk(session_id)
             if session:
+                self.logger.info(f"Found session on disk: {session_id}")
+                
                 if session.is_expired(self.max_age_hours):
+                    self.logger.warning(f"Session expired on disk: {session_id}")
                     self._cleanup_session(session_id)
                     raise SessionNotFoundError(session_id)
                 
                 with self._lock:
                     self._sessions[session_id] = session
                 
+                self.logger.info(f"Loaded session from disk to memory: {session_id}")
                 return session
+            else:
+                self.logger.warning(f"Session not found on disk: {session_id}")
         
+        self.logger.error(f"Session not found anywhere: {session_id}")
         raise SessionNotFoundError(session_id)
     
     def update_session_data(self, session_id: str, field_path: str, value: str) -> SessionData:
@@ -222,10 +244,10 @@ class SessionService:
             from ..models import ValidationResult, ValidationStatus, TemplateType
             from ..models import ClientData, VehicleData, DocumentData, PaymentData, NewVehicleData, ThirdPartyData
             
-            # Use simple reconstruction - let ExtractedData use defaults for missing fields
+            # CKDEV-NOTE: Enhanced reconstruction with backward compatibility
             extracted_data_dict = data.get("extracted_data", {})
             
-            # Required fields
+            # Required fields with error handling
             client = ClientData(**extracted_data_dict.get("client", {}))
             vehicle = VehicleData(**extracted_data_dict.get("vehicle", {}))  
             document = DocumentData(**extracted_data_dict.get("document", {}))
@@ -236,11 +258,18 @@ class SessionService:
                 document=document
             )
             
-            # Set optional fields if present
+            # Set optional fields if present with backward compatibility
             if extracted_data_dict.get("payment"):
                 extracted_data.payment = PaymentData(**extracted_data_dict["payment"])
+            
             if extracted_data_dict.get("new_vehicle"):
-                extracted_data.new_vehicle = NewVehicleData(**extracted_data_dict["new_vehicle"])
+                # CKDEV-NOTE: Handle backward compatibility for NewVehicleData schema changes
+                new_vehicle_data = extracted_data_dict["new_vehicle"]
+                # Filter out any unknown fields to prevent __init__ errors
+                valid_fields = {k: v for k, v in new_vehicle_data.items() 
+                              if k in ['model', 'year_model', 'chassis', 'brand', 'plate', 'color', 'value', 'sales_order']}
+                extracted_data.new_vehicle = NewVehicleData(**valid_fields)
+            
             if extracted_data_dict.get("third_party"):
                 extracted_data.third_party = ThirdPartyData(**extracted_data_dict["third_party"])
             

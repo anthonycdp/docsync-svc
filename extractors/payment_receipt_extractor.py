@@ -216,9 +216,7 @@ class PaymentReceiptExtractor:
             receiver_bank = self._extract_receiver_bank(text)
         
         
-        import sys
-        if "--debug" in sys.argv:
-            data["_debug_ocr_text"] = text[:800] + "..." if len(text) > 800 else text
+        # CKDEV-NOTE: Debug mode disabled - no OCR text logging
         
         return data
     

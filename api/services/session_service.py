@@ -47,23 +47,12 @@ class SessionService:
         if self.session_dir:
             self._persist_session(session)
         
-        self.logger.info(
-            f"Session created: {session_id}",
-            extra={
-                "session_id": session_id,
-                "template_type": template_type.value,
-                "files_processed": files_processed
-            }
-        )
+        # CKDEV-NOTE: Session created successfully
         
         return session_id
     
     def get_session(self, session_id: str) -> SessionData:
-        # CKDEV-NOTE: Enhanced debug logging for session retrieval troubleshooting
-        self.logger.info(f"Getting session: {session_id}")
-        self.logger.info(f"Valid session ID format: {SessionManager.is_valid_session_id(session_id)}")
-        self.logger.info(f"Sessions in memory: {list(self._sessions.keys())}")
-        self.logger.info(f"Session dir configured: {self.session_dir}")
+        # CKDEV-NOTE: Session retrieval initiated
         
         if not SessionManager.is_valid_session_id(session_id):
             self.logger.error(f"Invalid session ID format: {session_id}")
@@ -71,27 +60,19 @@ class SessionService:
         
         with self._lock:
             if session_id in self._sessions:
-                self.logger.info(f"Found session in memory: {session_id}")
+                self.logger.info(f"Session found in memory: {session_id}")
                 session = self._sessions[session_id]
-                
-                self.logger.info(f"Session timestamp: {session.timestamp}")
-                self.logger.info(f"Max age hours: {self.max_age_hours}")
                 
                 if session.is_expired(self.max_age_hours):
                     self.logger.warning(f"Session expired in memory: {session_id}")
                     self._cleanup_session(session_id)
                     raise SessionNotFoundError(session_id)
                 
-                self.logger.info(f"Returning valid session from memory: {session_id}")
                 return session
-        
-        self.logger.info(f"Session not in memory, checking disk: {session_id}")
         
         if self.session_dir:
             session = self._load_session_from_disk(session_id)
             if session:
-                self.logger.info(f"Found session on disk: {session_id}")
-                
                 if session.is_expired(self.max_age_hours):
                     self.logger.warning(f"Session expired on disk: {session_id}")
                     self._cleanup_session(session_id)
@@ -100,12 +81,9 @@ class SessionService:
                 with self._lock:
                     self._sessions[session_id] = session
                 
-                self.logger.info(f"Loaded session from disk to memory: {session_id}")
                 return session
-            else:
-                self.logger.warning(f"Session not found on disk: {session_id}")
         
-        self.logger.error(f"Session not found anywhere: {session_id}")
+        self.logger.error(f"Session not found: {session_id}")
         raise SessionNotFoundError(session_id)
     
     def update_session_data(self, session_id: str, field_path: str, value: str) -> SessionData:
@@ -130,14 +108,7 @@ class SessionService:
         if self.session_dir:
             self._persist_session(session)
         
-        self.logger.info(
-            f"Session data updated: {session_id}",
-            extra={
-                "session_id": session_id,
-                "field": field_path,
-                "value": value[:50] + "..." if len(value) > 50 else value
-            }
-        )
+        # CKDEV-NOTE: Session data updated successfully
         
         return session
     
@@ -151,7 +122,7 @@ class SessionService:
             if session_file.exists():
                 session_file.unlink()
         
-        self.logger.info(f"Session deleted: {session_id}")
+        # CKDEV-NOTE: Session deleted successfully
         return True
     
     def cleanup_expired_sessions(self) -> int:
@@ -179,7 +150,7 @@ class SessionService:
                     expired_count += 1
         
         if expired_count > 0:
-            self.logger.info(f"Cleaned up {expired_count} expired sessions")
+            pass
         
         return expired_count
     

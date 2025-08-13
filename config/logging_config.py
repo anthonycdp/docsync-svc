@@ -2,8 +2,8 @@ import logging
 import warnings
 from typing import Optional, Dict, List
 
-DEFAULT_EXTERNAL_LIBS = ['pdf2image', 'pytesseract', 'PIL']
-DEFAULT_WARNING_PATTERNS = [".*tesseract.*", ".*poppler.*", ".*Unable to get page count.*"]
+DEFAULT_EXTERNAL_LIBS = ['pdf2image']
+DEFAULT_WARNING_PATTERNS = [".*poppler.*", ".*Unable to get page count.*"]
 
 
 class UserFriendlyFilter(logging.Filter):
@@ -16,8 +16,8 @@ class UserFriendlyFilter(logging.Filter):
         for technical_msg, friendly_msg in self.friendly_messages.items():
             if technical_msg.lower() in msg_lower:
                 record.msg = friendly_msg
-                record.levelno = logging.INFO
-                record.levelname = 'INFO'
+                record.levelno = logging.ERROR  # CKDEV-NOTE: Changed from INFO to ERROR
+                record.levelname = 'ERROR'  # CKDEV-NOTE: Changed from INFO to ERROR
                 break
         return True
 

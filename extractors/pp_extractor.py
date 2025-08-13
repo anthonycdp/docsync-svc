@@ -5,28 +5,14 @@ from typing import Optional, Dict
 if str(Path(__file__).parent.parent) not in sys.path: 
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    import pytesseract
-    from pdf2image import convert_from_path
-    OCR_AVAILABLE = True
-except ImportError: 
-    OCR_AVAILABLE = False
-
-try:
-    import fitz
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
 
 try:
     from ..data import ClientData, VehicleData, DocumentData, PaymentData, NewVehicleData, ThirdPartyData, ExtractedData
     from ..utils import LoggerMixin, PDFExtractionError, ValidationError
-    from ..utils.ocr_status import log_ocr_status_once
     from .cnh_extractor import CNHExtractor
 except (ImportError, ValueError):
     from data import ClientData, VehicleData, DocumentData, PaymentData, NewVehicleData, ThirdPartyData, ExtractedData
     from utils import LoggerMixin, PDFExtractionError, ValidationError
-    from utils.ocr_status import log_ocr_status_once
     from extractors.cnh_extractor import CNHExtractor
 
 class ProposalExtractor(LoggerMixin):
@@ -35,7 +21,6 @@ class ProposalExtractor(LoggerMixin):
         super().__init__()
         self.patterns = self._setup_regex_patterns()
         self.model_to_brand = self._load_brand_model_dictionary()
-        log_ocr_status_once()
     
     def _setup_regex_patterns(self) -> Dict[str, re.Pattern]:
         return {
@@ -91,82 +76,16 @@ class ProposalExtractor(LoggerMixin):
                 for page in pdf.pages:
                     full_text += (page.extract_text() or "") + "\n"
                 
-                extracted_data = self.extract_proposal_data(full_text, pdf_path) if len(full_text.strip()) >= 100 else None
-                if extracted_data and self._is_extraction_sufficient(extracted_data): 
-                    return extracted_data
-            
-            # CKDEV-NOTE: Try OCR extraction as fallback or with mock data if OCR unavailable
-            try:
-                ocr_text = self._extract_text_with_ocr(pdf_path)
-                ocr_extracted_data = self.extract_proposal_data(ocr_text, pdf_path)
-                if self._is_extraction_sufficient(ocr_extracted_data): 
-                    return ocr_extracted_data
-            except Exception as ocr_error:
-                self.logger.warning(f"OCR fallback falhou: {ocr_error}")
-            
-            # CKDEV-NOTE: If all extraction methods fail, return example data to allow system demo
-            if not extracted_data or not self._is_extraction_sufficient(extracted_data):
-                self.logger.info("Usando dados de demonstração - extração completa não foi possível")
-                fallback_text = self._get_fallback_text_content()
-                extracted_data = self.extract_proposal_data(fallback_text, pdf_path)
-            
-            return extracted_data or ExtractedData(client=ClientData(), vehicle=VehicleData(), document=DocumentData())
+                if len(full_text.strip()) < 100:
+                    raise PDFExtractionError("Texto extraído insuficiente para análise", pdf_path=pdf_path)
+                
+                extracted_data = self.extract_proposal_data(full_text, pdf_path)
+                return extracted_data
                 
         except Exception as e:
             self.log_error(e, "extract_data", pdf_path=pdf_path)
             raise PDFExtractionError(f"Erro ao extrair dados do PDF: {e}", pdf_path=pdf_path)
     
-    def _extract_text_with_ocr(self, pdf_path: str) -> str:
-        """Extrai texto usando OCR como fallback quando pdfplumber falha"""
-        if not OCR_AVAILABLE: 
-            self.logger.warning("OCR não disponível - usando dados de exemplo para demonstração")
-            return self._get_fallback_text_content()
-        
-        try:
-            pages = convert_from_path(pdf_path, dpi=200, poppler_path=None)
-            full_text = ""
-            for page_image in pages: 
-                full_text += pytesseract.image_to_string(page_image, lang='por') + "\n"
-            return full_text
-        except Exception as e: 
-            self.logger.error(f"Erro na extração OCR: {e}")
-            self.logger.info("Usando dados de exemplo como fallback")
-            return self._get_fallback_text_content()
-    
-    def _get_fallback_text_content(self) -> str:
-        """Retorna conteúdo de texto de exemplo para uso quando OCR não está disponível"""
-        return """
-        PROPOSTA DE FINANCIAMENTO DE VEÍCULOS
-        NR. 123456789
-        
-        Cliente: JOÃO DA SILVA SANTOS
-        CPF: 123.456.789-10
-        Ident/Inscrição: 1234567
-        RG: 12.345.678-9 SSP/SP
-        Endereço: RUA DAS FLORES, 123 - CENTRO
-        CEP: 12345-678
-        Cidade: SÃO JOSÉ DOS CAMPOS - SP
-        Telefone: (12) 99999-9999
-        
-        DADOS DO VEÍCULO
-        Marca: VOLKSWAGEN
-        Modelo: POLO
-        Ano: 2020/2021
-        Cor: BRANCO
-        Placa: ABC1D23
-        Chassi: 9BWZZZ377VT123456
-        Combustível: FLEX
-        
-        Valor do Veículo: R$ 45.000,00
-        Valor Financiado: R$ 40.000,00
-        Entrada: R$ 5.000,00
-        
-        Data: 15/01/2025
-        
-        OBSERVAÇÕES:
-        Esta proposta é válida por 30 dias.
-        Sistema funcionando em modo demonstração - OCR não disponível.
-        """
     
     def _is_extraction_sufficient(self, extracted_data: ExtractedData) -> bool:
         client_ok = bool(extracted_data.client.name.strip() and extracted_data.client.cpf.strip())
@@ -179,6 +98,8 @@ class ProposalExtractor(LoggerMixin):
         vehicle = self._extract_vehicle_data(text, pdf_path)
         document = self._extract_document_data(text)
         new_vehicle = self._extract_new_vehicle_data(text)
+        
+        # CKDEV-NOTE: Removed incorrect fallback that was copying new vehicle color to used vehicle
         
         return ExtractedData(client=client, vehicle=vehicle, document=document, new_vehicle=new_vehicle, payment=None, third_party=None)
     
@@ -341,6 +262,7 @@ class ProposalExtractor(LoggerMixin):
         return client
     
     def _extract_vehicle_data(self, text: str, pdf_path: str = None) -> VehicleData:
+        """Extrai dados do veículo usado na troca"""
         vehicle = VehicleData()
         
         used_vehicle_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', text, re.DOTALL | re.IGNORECASE)
@@ -350,245 +272,57 @@ class ProposalExtractor(LoggerMixin):
         else:
             section_text = text
         
-        plate_patterns = [
-            r'Placa\s+([A-Z]{3}[0-9][A-Z0-9][0-9]{2})',
-            r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})',
-        ]
-        
-        for pattern in plate_patterns:
-            plate_match = re.search(pattern, section_text)
+        if not vehicle.plate:
+            plate_match = re.search(r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})', section_text)
             if plate_match: 
                 vehicle.plate = plate_match.group(1)
-                break
         
-        model_patterns = [
-            r'Modelo\s+([A-Z0-9\s\.\-]{3,50}?)(?:\s+Cor|\s+Valor|\s+Fab/Mod|\s+\d{4}/|\n)',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]*?\d\.\d+\s+(?:TURBO|FLEX))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]*?(?:TURBO|FLEX))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]+?)(?:\s+(?:FLEXP|RPERTEO|AUTOMATIC))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z0-9\s\.\-]+?)(?=\s+(?:FLEXP|RPERTEO|AUTOMATIC))',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]+?)(?:\d{{1,3}}\.\d{{3}},\d{{2}}|\d{{4}}\s*/|\s+\d{{4}}/)',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z0-9\s\.\-]+?)(?=\d{{1,3}}\.\d{{3}},\d{{2}})',
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+([A-Z][A-Z0-9\s\.\-]{{5,50}}?)(?:\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE))',
-            r'([A-Z][A-Z0-9\s\.\-]{10,50}?)\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)',
-        ]
-        
-        for pattern in model_patterns:
-            model_match = re.search(pattern, section_text, re.IGNORECASE)
+        if not vehicle.model and vehicle.plate:
+            line_pattern = rf'{re.escape(vehicle.plate)}\s+([A-Z0-9\s\.\-]+?)\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)'
+            model_match = re.search(line_pattern, section_text, re.IGNORECASE)
             if model_match:
                 raw_model = model_match.group(1).strip()
                 vehicle.model = self._clean_vehicle_model(raw_model)
-                if len(vehicle.model) >= 3:
-                    break
-        
-        chassis_patterns = [
-            r'Chassi\s+([A-Z0-9]{17})',
-            r'([A-Z0-9]{17})',
-        ]
-        
-        for pattern in chassis_patterns:
-            chassis_match = re.search(pattern, section_text)
-            if chassis_match:
-                vehicle.chassis = chassis_match.group(1)
-                break
+            else:
+                flexible_pattern = rf'{re.escape(vehicle.plate)}\s+([A-Z0-9][A-Z0-9\s\.\-]{{5,30}})'
+                flexible_match = re.search(flexible_pattern, section_text, re.IGNORECASE)
+                if flexible_match:
+                    raw_model = re.sub(r'\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE).*$', '', flexible_match.group(1).strip(), flags=re.IGNORECASE)
+                    raw_model = re.sub(r'\s+(RMEATN[O]?[U]?[A]?[L]?|RPERTEO|RPRETO).*$', '', raw_model, flags=re.IGNORECASE)
+                    vehicle.model = self._clean_vehicle_model(raw_model)
+            
+            if not vehicle.chassis:
+                chassis_matches = self.patterns['chassis'].findall(section_text)
+                if chassis_matches: 
+                    vehicle.chassis = chassis_matches[0]
                 
-        color_patterns = [
-
-            rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}\s+[A-Z0-9\s\.\-]+?\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)(?:\s+\d{{1,3}}\.\d{{3}},\d{{2}})',
-            r'TURBO\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
-            r'FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
-            r'[A-Z0-9\s\.\-]+\s+FL\s+(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b',
-            r'Cor:\s*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+?)(?:\s*Valor|\s*Fab/Mod|\s*Avaliação|\s*\d{1,3}\.\d{3},\d{2}|\n)(?!\s*Valor)',
-            r'(?<!Placa\s)(?<!Modelo\s)(?<!Cor\s)(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\s+(?:\d{1,3}\.\d{3},\d{2})',
-            r'^(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)$',
-            r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|CINZENTO|DOURADO|OURO|VERDE|AMARELO|BEGE|GRAFITE|PÉROLA|METÁLICA?)\b(?!\s+VALOR)(?!\s+Fab/Mod)(?!\s+Chassi)',
-            r'\b(BRANCO\s+POLAR|PRETO\s+SANTORINI|PRATA\s+REFLEX|AZUL\s+OCEANO|VERDE\s+AMAZONAS|CINZA\s+MOONSTONE|GRAFITE\s+STELLAR)\b',
-            r'Cor[:\s]+(?!VALOR)([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ][A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]*?)(?:\s+(?:Valor|Fab|Mod|Avaliação|\d)|\n|$)',
-        ]
-        
-        for pattern in color_patterns:
-            color_match = re.search(pattern, section_text, re.IGNORECASE | re.MULTILINE)
+        if used_vehicle_section:
+            section_text_used = used_vehicle_section.group(0)
+            
+            color_pattern = r'\b(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\b'
+            color_match = re.search(color_pattern, section_text_used, re.IGNORECASE)
             if color_match:
-                vehicle.color = color_match.group(1).upper().strip()
-                self.log_operation("_extract_vehicle_data", 
-                                 action="color_extracted", 
-                                 pattern_used=pattern[:50] + "..." if len(pattern) > 50 else pattern,
-                                 extracted_color=vehicle.color)
-                break
-        
-        # CKDEV-NOTE: Additional patterns for edge cases - enhanced for production compatibility
-        if not vehicle.color:
-            # Handle specific OCR corruption pattern for PRETO color
-            if 'RPERTEOMIER' in section_text or 'RPERTEO' in section_text:
-                # RPERTEOMIER is corrupted OCR for PRETO (black color)
-                vehicle.color = 'PRETO'
-                self.log_operation("_extract_vehicle_data", 
-                                 action="color_extracted_from_corruption", 
-                                 corrupted_text="RPERTEOMIER/RPERTEO",
-                                 extracted_color=vehicle.color)
-            
-            # Try parsing the raw pdfplumber text differently for table-based layouts
-            if not vehicle.color:
-                table_sections = section_text.split('\n')
-                
-                # Look for table headers and try to extract color from structured data
-                for i, line in enumerate(table_sections):
-                    line_clean = line.strip().upper()
-                    
-                    # If we find a line with common table headers
-                    if any(header in line_clean for header in ['PLACA', 'MODELO', 'COR', 'VALOR']):
-                        # Look in subsequent lines for color values
-                        for j in range(i + 1, min(i + 10, len(table_sections))):
-                            next_line = table_sections[j].strip().upper()
-                            
-                            # Check if this line contains color information
-                            color_words = ['PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
-                                         'CINZA', 'CINZENTO', 'DOURADO', 'VERDE', 'AMARELO', 
-                                         'BEGE', 'GRAFITE', 'AZUL TITAN']
-                            
-                            for color in color_words:
-                                if color in next_line:
-                                    # Check if this looks like vehicle data (has plate or value pattern)
-                                    if (vehicle.plate and vehicle.plate in next_line) or re.search(r'\d{1,3}\.\d{3},\d{2}', next_line):
-                                        vehicle.color = color
-                                        self.log_operation("_extract_vehicle_data", 
-                                                         action="color_extracted_table_parsing", 
-                                                         line_content=next_line[:50],
-                                                         extracted_color=vehicle.color)
-                                        break
-                                    # Or if the line only contains color and value
-                                    elif re.match(f'^{color}\\s*\\d{{1,3}}\\.\\d{{3}},\\d{{2}}', next_line):
-                                        vehicle.color = color
-                                        self.log_operation("_extract_vehicle_data", 
-                                                         action="color_extracted_value_pattern", 
-                                                         line_content=next_line[:50],
-                                                         extracted_color=vehicle.color)
-                                        break
-                            
-                            if vehicle.color:
-                                break
+                vehicle.color = color_match.group(1).upper()
+            else:
+                if pdf_path:
+                    try:
+                        import fitz
+                        doc = fitz.open(pdf_path)
+                        pymupdf_text = ""
+                        for page_num in range(len(doc)):
+                            page = doc.load_page(page_num)
+                            pymupdf_text += page.get_text() + "\n"
+                        doc.close()
                         
-                        if vehicle.color:
-                            break
+                        pymupdf_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', pymupdf_text, re.DOTALL | re.IGNORECASE)
+                        if pymupdf_section:
+                            pymupdf_section_text = pymupdf_section.group(0)
+                            pymupdf_color_match = re.search(color_pattern, pymupdf_section_text, re.IGNORECASE)
+                            if pymupdf_color_match:
+                                vehicle.color = pymupdf_color_match.group(1).upper()
+                    except Exception:
+                        pass
             
-            # Additional fallback patterns for edge cases
-            if not vehicle.color:
-                additional_patterns = [
-                    # Try searching in the full text for standalone color words near vehicle info
-                    rf'{re.escape(vehicle.plate) if vehicle.plate else r"[A-Z]{{3}}[0-9][A-Z0-9][0-9]{{2}}"}.*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN).*?\d{{1,3}}\.\d{{3}},\d{{2}}',
-                    # Color followed by value pattern in messy text
-                    r'(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)\s*\d{1,3}\.\d{3},\d{2}',
-                    # Look for color in vehicle description without specific format
-                    r'TRACKER[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)',
-                    # Pattern for when color appears between model and automatic/flex
-                    r'TURBO[^A-Z]*?(PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE|AZUL TITAN)[^A-Z]*?(?:AUTOMATIC|FLEX)',
-                    # Pattern for corrupted OCR where FLEX becomes FLEXP and color gets merged
-                    r'FLEXP[^A-Z]*?RPERTEOMIER[^A-Z]*?AUTOMATIC[^A-Z]*?(\d{1,3}\.\d{3},\d{2})',
-                ]
-                
-                for additional_pattern in additional_patterns:
-                    color_match = re.search(additional_pattern, section_text, re.IGNORECASE)
-                    if color_match:
-                        vehicle.color = color_match.group(1).upper().strip()
-                        self.log_operation("_extract_vehicle_data", 
-                                         action="color_extracted_additional", 
-                                         pattern_used=additional_pattern[:50] + "..." if len(additional_pattern) > 50 else additional_pattern,
-                                         extracted_color=vehicle.color)
-                        break
-        
-        # CKDEV-NOTE: OCR fallback for table-based PDFs where pdfplumber fails to extract color
-        if not vehicle.color and pdf_path and OCR_AVAILABLE:
-            try:
-                self.log_operation("_extract_vehicle_data", 
-                                 action="attempting_ocr_fallback_for_color", 
-                                 reason="color_not_found_in_pdfplumber_text")
-                
-                ocr_text = self._extract_text_with_ocr(pdf_path)
-                
-                # Find used vehicle section in OCR text
-                ocr_section = re.search(r'DESCRIÇÃO DO\(S\) VEÍCULO\(S\) USADO\(S\)(?:\s*\(PARA TROCA\))?.*?(?=VALORES|OBSERVAÇÕES|$)', ocr_text, re.DOTALL | re.IGNORECASE)
-                if ocr_section:
-                    ocr_section_text = ocr_section.group(0)
-                    
-                    # Try the same color patterns on OCR text
-                    for pattern in color_patterns:
-                        color_match = re.search(pattern, ocr_section_text, re.IGNORECASE | re.MULTILINE)
-                        if color_match:
-                            vehicle.color = color_match.group(1).upper().strip()
-                            self.log_operation("_extract_vehicle_data", 
-                                             action="color_extracted_ocr", 
-                                             pattern_used=pattern[:50] + "..." if len(pattern) > 50 else pattern,
-                                             extracted_color=vehicle.color)
-                            break
-                    
-                    # If still not found, try line-by-line analysis on OCR text
-                    if not vehicle.color:
-                        lines = ocr_section_text.split('\n')
-                        valid_colors = [
-                            'PRETO', 'BRANCO', 'BRANCA', 'PRATA', 'AZUL', 'VERMELHO', 
-                            'CINZA', 'CINZENTO', 'DOURADO', 'OURO', 'VERDE', 'AMARELO', 
-                            'BEGE', 'GRAFITE', 'PÉROLA', 'METÁLICA', 'METALICA',
-                            'BRANCO POLAR', 'PRETO SANTORINI', 'PRATA REFLEX', 
-                            'AZUL OCEANO', 'VERDE AMAZONAS', 'CINZA MOONSTONE', 
-                            'GRAFITE STELLAR', 'AZUL TITAN'
-                        ]
-                        
-                        for line in lines:
-                            line_clean = line.strip().upper()
-                            
-                            # Look for color words in lines that contain vehicle data
-                            for color in valid_colors:
-                                if color in line_clean:
-                                    # Verify this line contains vehicle information
-                                    if (vehicle.plate and vehicle.plate in line_clean) or re.search(r'\d{1,3}[.,]\d{3}[.,]\d{2}', line_clean):
-                                        vehicle.color = color
-                                        self.log_operation("_extract_vehicle_data", 
-                                                         action="color_extracted_ocr_line_analysis", 
-                                                         line_content=line_clean[:80],
-                                                         extracted_color=vehicle.color)
-                                        break
-                            
-                            if vehicle.color:
-                                break
-                        
-                        # Final attempt: look for standalone color lines
-                        if not vehicle.color:
-                            for line in lines:
-                                line_clean = line.strip().upper()
-                                if line_clean in valid_colors:
-                                    vehicle.color = line_clean
-                                    self.log_operation("_extract_vehicle_data", 
-                                                     action="color_extracted_ocr_standalone", 
-                                                     extracted_color=vehicle.color)
-                                    break
-                
-            except Exception as e:
-                self.log_error(e, "_extract_vehicle_data", context="ocr_fallback_for_color")
-                pass
-        
-        # CKDEV-NOTE: Log quando cor não é extraída para debug
-        if not vehicle.color:
-            self.log_warning("Cor do veículo não extraída", 
-                           section_preview=section_text[:200] + "..." if len(section_text) > 200 else section_text)
-            
-        year_model_patterns = [
-            r'Fab/Mod:\s*(\d{4})\s*/\s*(\d{4})',
-            r'(\d{4})\s*/\s*(\d{4})',
-        ]
-        
-        for pattern in year_model_patterns:
-            year_match = re.search(pattern, section_text)
-            if year_match:
-                year1, year2 = year_match.groups()
-                year1_int = int(year1)
-                year2_int = int(year2)
-                
-                if (1990 <= year1_int <= 2030 and 
-                    1990 <= year2_int <= 2030 and 
-                    abs(year2_int - year1_int) <= 5):
-                    vehicle.year_model = f"{year1}/{year2}"
-                    break
-        
         if not vehicle.year_model:
             main_pattern = r'\b((?:19|20)\d{2})\s*/\s*((?:19|20)\d{2})\b(?!\w)'
             
@@ -639,29 +373,21 @@ class ProposalExtractor(LoggerMixin):
                 vehicle.year_model = ""
         
         if used_vehicle_section:
-            # Handle merged AUTOMATIC and value pattern
-            automatic_value_pattern = r'AUTOMATIC(\d{1,3}(?:\.\d{3})*,\d{2})'
-            automatic_match = re.search(automatic_value_pattern, section_text, re.IGNORECASE)
+            value_pattern = r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})\s+[A-Z0-9\s\.\-]+?\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+([\d.,]+)'
+            value_match = re.search(value_pattern, section_text, re.IGNORECASE)
             
-            if automatic_match:
-                vehicle.value = automatic_match.group(1)
+            if value_match:
+                raw_value = value_match.group(2)
+                formatted_value = raw_value.replace('.', '').replace(',', ',')
+                vehicle.value = formatted_value
             else:
-                value_pattern = r'([A-Z]{3}[0-9][A-Z0-9][0-9]{2})\s+[A-Z0-9\s\.\-]+?\s+(?:PRETO|BRANCO|BRANCA|PRATA|AZUL|VERMELHO|CINZA|DOURADO|VERDE|AMARELO|BEGE)\s+([\d.,]+)'
-                value_match = re.search(value_pattern, section_text, re.IGNORECASE)
-                
-                if value_match:
-                    raw_value = value_match.group(2); formatted_value = raw_value.replace('.', '').replace(',', ','); vehicle.value = formatted_value
-                else:
-                    # Only use fallback if color is already found (to avoid value being used as color)
-                    if vehicle.color:
-                        fallback_value_pattern = r'(\d{1,3}(?:\.\d{3})*,\d{2})'; fallback_match = re.search(fallback_value_pattern, section_text)
-                        if fallback_match: vehicle.value = fallback_match.group(1)
+                fallback_value_pattern = r'(\d{1,3}(?:\.\d{3})*,\d{2})'
+                fallback_match = re.search(fallback_value_pattern, section_text)
+                if fallback_match: 
+                    vehicle.value = fallback_match.group(1)
         
-        if vehicle.model:
-            if not vehicle.brand:
-                vehicle.brand = self._extract_brand_from_model(vehicle.model)
-            elif not vehicle.brand.strip():
-                vehicle.brand = self._extract_brand_from_model(vehicle.model)
+        if vehicle.model and not vehicle.brand:
+            vehicle.brand = self._extract_brand_from_model(vehicle.model)
         
         return vehicle
     
@@ -784,7 +510,7 @@ class ProposalExtractor(LoggerMixin):
                     return self.model_to_brand[main_model]
             
             if len(model_words) >= 2:
-                # Tenta combinações como "TRACKER 1.2", "POLO 1.0", etc.
+                # Tenta combinações como "MODELO 1.2", "MODELO 1.0", etc.
                 for i in range(2, len(model_words) + 1):
                     partial_model = " ".join(model_words[:i])
                     if partial_model in self.model_to_brand:
@@ -792,7 +518,7 @@ class ProposalExtractor(LoggerMixin):
             
             for dict_model, brand in self.model_to_brand.items():
                 # Verifica se a primeira palavra do modelo extraído está no dicionário
-                if model_words and model_words[0] in dict_model:
+                if model_words and model_words[0] in dict_model.split():
                     return brand
             
             return ""

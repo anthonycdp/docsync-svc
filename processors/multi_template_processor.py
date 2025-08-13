@@ -152,7 +152,7 @@ class MultiTemplateProcessor(LoggerMixin):
                 'MARCA_VEICULO_VENDIDO': brand,
                 'MODELO_VEICULO_VENDIDO': data.vehicle.model or '',
                 'CHASSI_VEICULO_VENDIDO': data.vehicle.chassis or '',
-                'COR_VEICULO_VENDIDO': data.vehicle.color or os.getenv('DEFAULT_VEHICLE_COLOR', 'COR'),
+                'COR_VEICULO_VENDIDO': data.vehicle.color.strip() if data.vehicle.color else os.getenv('DEFAULT_VEHICLE_COLOR', ''),
                 'PLACA_VEICULO_VENDIDO': data.vehicle.plate or '',
                 'ANO_MODELO_VEICULO_VENDIDO': data.vehicle.year_model or '',
                 'VALOR_VEICULO_VENDIDO': f"R$ {data.vehicle.value}" if data.vehicle.value else "R$ 0,00"
@@ -207,7 +207,7 @@ class MultiTemplateProcessor(LoggerMixin):
             'MARCA_VEICULO': brand,
             'MODELO_VEICULO': data.vehicle.model or "",
             'CHASSI_VEICULO': data.vehicle.chassis or "",
-            'COR_VEICULO': data.vehicle.color or "",
+            'COR_VEICULO': data.vehicle.color.strip() if data.vehicle.color else "",
             'PLACA_VEICULO': data.vehicle.plate or "",
             'ANO_MODELO_VEICULO': data.vehicle.year_model or ""
         }

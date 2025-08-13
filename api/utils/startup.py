@@ -18,7 +18,7 @@ def print_startup_banner(config: Any) -> None:
     print(f"{Fore.CYAN}[STARTUP] Server Configuration:{Style.RESET_ALL}")
     print(f"   Host: {Fore.GREEN}{config.HOST}{Style.RESET_ALL}")
     print(f"   Port: {Fore.GREEN}{config.PORT}{Style.RESET_ALL}")
-    print(f"   Debug: {Fore.YELLOW if config.DEBUG else Fore.GREEN}{'Enabled' if config.DEBUG else 'Disabled'}{Style.RESET_ALL}")
+    print(f"   Debug: {Fore.GREEN}Disabled{Style.RESET_ALL}")  # CKDEV-NOTE: Debug mode always disabled
     print(f"   URL: {Fore.BLUE}http://{config.HOST}:{config.PORT}{Style.RESET_ALL}\n")
     
     print(f"{Fore.MAGENTA}Ready to process your documents!{Style.RESET_ALL}")

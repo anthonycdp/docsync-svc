@@ -222,17 +222,7 @@ class SessionData:
         # TODO: Re-enable after resolving session persistence issues
         return False
         
-        # CKDEV-NOTE: Original expiration logic (temporarily disabled)
-        # current_time = datetime.now(timezone.utc)
-        # session_time = self.timestamp.replace(tzinfo=timezone.utc) if self.timestamp.tzinfo is None else self.timestamp
-        # age = current_time - session_time
-        # age_hours = age.total_seconds() / 3600
-        # 
-        # from ..utils.logger import get_service_logger
-        # logger = get_service_logger('session')
-        # logger.debug(f"Session {self.session_id}: age={age_hours:.2f}h, max={max_age_hours}h, expired={age_hours > max_age_hours}")
-        # 
-        # return age_hours > max_age_hours
+        # CKDEV-NOTE: Session expiration logic temporarily disabled for stability
     
     def to_dict(self) -> Dict[str, Any]:
         return {

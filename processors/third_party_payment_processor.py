@@ -295,7 +295,7 @@ class ThirdPartyPaymentProcessor(LoggerMixin):
             return None
     
     def _generate_extraction_summary(self, data: ExtractedData) -> Dict[str, Any]:
-        """CKDEV-NOTE: Gera resumo da extração para auditoria e debugging"""
+        """CKDEV-NOTE: Gera resumo da extração para auditoria"""
         return {
             'client_extracted': bool(data.client.name and data.client.cpf),
             'vehicle_extracted': bool(data.vehicle.model and data.vehicle.plate),

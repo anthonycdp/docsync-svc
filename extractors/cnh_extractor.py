@@ -24,16 +24,22 @@ class CNHExtractor:
             except Exception:
                 pass
         
-        if not self.api_key:
-            raise ValueError("GOOGLE_CLOUD_API_KEY not found in environment variables or .env file")
-        
-        self.api_url = f"https://vision.googleapis.com/v1/images:annotate?key={self.api_key}"
+        # CKDEV-NOTE: Allow CNHExtractor to work without API key for fallback scenarios
+        self.api_key_available = bool(self.api_key)
+        if self.api_key_available:
+            self.api_url = f"https://vision.googleapis.com/v1/images:annotate?key={self.api_key}"
+        else:
+            self.api_url = None
     
     def extract_from_file(self, file_path: Union[str, Path]) -> Dict[str, str]:
         file_path = Path(file_path)
         
         if not file_path.exists():
             raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
+        
+        # CKDEV-NOTE: Require API key for CNH extraction
+        if not self.api_key_available:
+            raise ValueError("GOOGLE_CLOUD_API_KEY is required for CNH extraction")
         
         if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff']:
             return self._extract_from_image(file_path)
@@ -51,6 +57,9 @@ class CNHExtractor:
         Returns:
             Dicionário com os dados extraídos
         """
+        if not self.api_key_available:
+            raise ValueError("GOOGLE_CLOUD_API_KEY is required for CNH extraction")
+            
         with open(image_path, 'rb') as image_file:
             content = image_file.read()
         
@@ -124,6 +133,9 @@ class CNHExtractor:
         Returns:
             Dicionário com os dados extraídos
         """
+        if not self.api_key_available:
+            raise ValueError("GOOGLE_CLOUD_API_KEY is required for CNH extraction")
+            
         try:
             import fitz
             
@@ -300,3 +312,4 @@ class CNHExtractor:
             return False
             
         return True
+    

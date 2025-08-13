@@ -86,8 +86,7 @@ class ContextualLogger:
         
         self.logger.log(level, message, *args, **kwargs)
     
-    def debug(self, message: str, *args, **kwargs):
-        self._log_with_context(logging.DEBUG, message, *args, **kwargs)
+    # CKDEV-NOTE: Debug logging disabled to reduce noise - only critical errors logged
     
     def info(self, message: str, *args, **kwargs):
         self._log_with_context(logging.INFO, message, *args, **kwargs)
@@ -121,11 +120,8 @@ class LoggerManager:
         
         root_logger.handlers.clear()
         
-        # Use friendly formatter for console in development
-        if config.DEBUG and config.LOG_FORMAT_CONSOLE:
-            console_formatter = FriendlyFormatter(config.LOG_FORMAT_CONSOLE)
-        else:
-            console_formatter = JSONFormatter()
+        # CKDEV-NOTE: Always use JSON formatter for consistency
+        console_formatter = JSONFormatter()
         
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(console_formatter)
@@ -139,7 +135,7 @@ class LoggerManager:
             encoding='utf-8'
         )
         file_handler.setFormatter(JSONFormatter())
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(logging.ERROR)  # CKDEV-NOTE: Changed from INFO to ERROR
         root_logger.addHandler(file_handler)
         
         error_handler = logging.handlers.RotatingFileHandler(
@@ -159,11 +155,11 @@ class LoggerManager:
             encoding='utf-8'
         )
         perf_handler.setFormatter(JSONFormatter())
-        perf_handler.setLevel(logging.INFO)
+        perf_handler.setLevel(logging.ERROR)  # CKDEV-NOTE: Changed from INFO to ERROR
         
         perf_logger = logging.getLogger('performance')
         perf_logger.addHandler(perf_handler)
-        perf_logger.setLevel(logging.INFO)
+        perf_logger.setLevel(logging.ERROR)  # CKDEV-NOTE: Changed from INFO to ERROR
         perf_logger.propagate = False
         
         security_handler = logging.handlers.RotatingFileHandler(
@@ -311,9 +307,9 @@ def log_file_operation(operation: str, file_path: str, success: bool, **kwargs):
     }
     log_data.update(kwargs)
     
-    if success:
-        logger.info(f"File operation successful: {operation}", extra=log_data)
-    else:
+    # CKDEV-NOTE: No logging for successful file operations to reduce noise
+    # Only log errors to maintain visibility of failures
+    if not success:
         logger.error(f"File operation failed: {operation}", extra=log_data)
 
 

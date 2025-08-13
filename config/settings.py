@@ -16,7 +16,7 @@ class Config:
     OCR_LANGUAGE: str = "por"
     OCR_TIMEOUT_SECONDS: int = 60
     
-    LOG_LEVEL: str = "INFO"
+    LOG_LEVEL: str = "ERROR"  # CKDEV-NOTE: Changed from INFO to ERROR for critical logs only
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     LOG_MAX_BYTES: int = 10_000_000
     LOG_BACKUP_COUNT: int = 5

@@ -113,15 +113,9 @@ def handle_generic_exception(error: Exception) -> Tuple[Dict[str, Any], int]:
     error_id = generate_error_id()
     log_error(error, error_id)
     
-    if current_app.config.get("DEBUG"):
-        message = str(error)
-        details = {
-            "type": type(error).__name__,
-            "traceback": traceback.format_exc().split("\n")
-        }
-    else:
-        message = "An internal server error occurred"
-        details = {}
+    # CKDEV-NOTE: Debug mode always disabled - no detailed error information
+    message = "An internal server error occurred"
+    details = {}
     
     response, status_code = create_error_response(
         message=message,

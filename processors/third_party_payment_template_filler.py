@@ -371,11 +371,10 @@ class ThirdPartyPaymentTemplateFiller(LoggerMixin):
         elif text.upper() == 'PRETO TITAN':
             return 'PRETO TITÃ'
         
-        if text.upper() == 'VOLKSWAGEN':
-            return 'VOLKSWAGEN'
+        # CKDEV-NOTE: Generic brand handling - specific hardcoded brands removed
         
         if len(text) > 25:
-            if 'NIVUS HIGHLINE' in text.upper():
-                return 'NIVUS HIGHLINE 200TSI'
+            # CKDEV-NOTE: Generic model handling - specific hardcoded models removed
+            pass
             
         return text

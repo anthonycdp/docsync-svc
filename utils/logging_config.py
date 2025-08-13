@@ -74,7 +74,7 @@ def setup_logging(config: Optional[Config] = None) -> logging.Logger:
     log_encoding = os.getenv('LOG_ENCODING', 'utf-8')
     
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.ERROR)  # CKDEV-NOTE: Changed from INFO to ERROR
     console_handler.setFormatter(StructuredFormatter(include_extra=False))
     console_handler.addFilter(SensitiveDataFilter())
     logger.addHandler(console_handler)
@@ -86,7 +86,7 @@ def setup_logging(config: Optional[Config] = None) -> logging.Logger:
         backupCount=config.LOG_BACKUP_COUNT, 
         encoding=log_encoding
     )
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.ERROR)  # CKDEV-NOTE: Changed from INFO to ERROR
     file_formatter = StructuredFormatter(include_extra=True)
     file_handler.setFormatter(file_formatter)
     file_handler.addFilter(SensitiveDataFilter())
@@ -105,8 +105,7 @@ def setup_logging(config: Optional[Config] = None) -> logging.Logger:
     error_handler.addFilter(SensitiveDataFilter())
     logger.addHandler(error_handler)
     
-    init_message = os.getenv('LOG_INIT_MESSAGE', 'Sistema de logging inicializado')
-    logger.info(init_message)
+    # CKDEV-NOTE: No initialization message to reduce log noise
     return logger
 
 

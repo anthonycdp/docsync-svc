@@ -107,7 +107,7 @@ def create_health_controller(config: Config, pdf_service: PDFConversionService =
                 "system": system_info,
                 "pdf_conversion": pdf_info,
                 "config": {
-                    "debug": config.DEBUG,
+                    "debug": False,  # CKDEV-NOTE: Debug mode always disabled
                     "environment": os.getenv("FLASK_ENV", "unknown"),
                     "max_content_length": config.MAX_CONTENT_LENGTH,
                     "cors_origins": config.CORS_ORIGINS

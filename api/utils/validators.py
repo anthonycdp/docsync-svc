@@ -116,7 +116,7 @@ class DataValidator:
         
         return ValidationResult(
             ValidationStatus.INVALID,
-            "Formato de placa inválido - use ABC-1234 ou ABC1D23"
+            "Formato de placa inválido - use AAA-0000 ou AAA0A00"
         )
     
     @staticmethod
@@ -438,6 +438,14 @@ class TemplateValidator:
         else:
             results['usedVehicle.chassi'] = ValidationResult(
                 ValidationStatus.INVALID, "Chassi obrigatório"
+            )
+        
+        # CKDEV-NOTE: Adicionar validação para valor do veículo que estava faltando
+        if hasattr(vehicle, 'value') and vehicle.value:
+            results['usedVehicle.value'] = DataValidator.validate_currency_amount(vehicle.value)
+        else:
+            results['usedVehicle.value'] = ValidationResult(
+                ValidationStatus.WARNING, "Valor do veículo não informado"
             )
         
         return results

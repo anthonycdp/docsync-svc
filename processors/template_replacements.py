@@ -36,6 +36,8 @@ class TemplateReplacementManager:
             replacements['{{USED_VEHICLE_CHASSIS}}'] = data.vehicle.chassis or ''
             # CKDEV-NOTE: Garantir que cor seja sempre substituída, mesmo vazia
             replacements['{{USED_VEHICLE_COLOR}}'] = data.vehicle.color.strip() if data.vehicle.color else ''
+            # CKDEV-NOTE: Add color to formatted value for currency display
+            replacements['{{USED_VEHICLE_VALUE}}'] = format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00'
             replacements['{{USED_VEHICLE_PLATE}}'] = data.vehicle.plate or ''
             replacements['{{USED_VEHICLE_YEAR_MODEL}}'] = data.vehicle.year_model or ''
             replacements['{{USED_VEHICLE_CREDIT}}'] = format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00'
@@ -51,7 +53,8 @@ class TemplateReplacementManager:
             replacements.update({
                 'MARCA_VEICULO': brand, 
                 'MODELO_VEICULO': data.vehicle.model or '', 
-                'COR_VEICULO': data.vehicle.color.strip() if data.vehicle.color else '', 
+                'COR_VEICULO': data.vehicle.color.strip() if data.vehicle.color else '',
+                'VALOR_VEICULO_USADO': format_currency_value(data.vehicle.value) if data.vehicle.value else 'R$ 0,00', 
                 'PLACA_VEICULO': data.vehicle.plate or '', 
                 'CHASSI_VEICULO': data.vehicle.chassis or '', 
                 'ANO_MODELO_VEICULO': data.vehicle.year_model or ''
@@ -448,7 +451,7 @@ class TemplateReplacementManager:
                 from utils.brand_lookup import get_brand_lookup
             brand_lookup = get_brand_lookup()
             brand = brand_lookup.get_brand_from_model(model)
-            return brand if brand else ""
+            return brand if brand and brand != 'None' else ""
         except Exception:
             return ""
     

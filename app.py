@@ -26,32 +26,15 @@ def setup_cleanup_scheduler(app: Flask, file_service: FileService, config: Confi
     logger = get_app_logger()
     
     if not config.CLEANUP_ENABLED:
-        logger.info("Automatic cleanup disabled via configuration")
         return
     
     def cleanup_temp_files():
         """Execute cleanup of temporary files with error handling"""
         try:
-            logger.info("Iniciando limpeza automática de arquivos temporários")
-            
-            # CKDEV-NOTE: Log das configurações de limpeza ativas
-            cleanup_features = []
-            if getattr(config, 'CLEANUP_CACHE_ENABLED', True):
-                cleanup_features.append("cache/sessions")
-            if getattr(config, 'CLEANUP_SHARED_OUTPUT_ENABLED', True):
-                cleanup_features.append("shared/output")
-            
-            logger.info(f"Recursos de limpeza habilitados: uploads, output, {', '.join(cleanup_features)}")
-            
             with app.app_context():
                 cleaned_count = file_service.cleanup_temp_files(
                     max_age_hours=config.CLEANUP_MAX_AGE_HOURS
                 )
-                
-            if cleaned_count > 0:
-                logger.info(f"Limpeza concluída: {cleaned_count} arquivos removidos de todas as pastas")
-            else:
-                logger.info("Limpeza concluída: nenhum arquivo removido")
                 
         except PermissionError as e:
             logger.error(f"Erro de permissão durante limpeza automática: {e}")
@@ -72,8 +55,7 @@ def setup_cleanup_scheduler(app: Flask, file_service: FileService, config: Confi
         name='Cleanup temporary files (daily) - uploads, cache, shared/output',
         replace_existing=True
     )
-    logger.info(f"Limpeza automática configurada para executar diariamente às {config.CLEANUP_HOUR:02d}:{config.CLEANUP_MINUTE:02d}")
-    logger.info(f"Configuração de limpeza: máximo {config.CLEANUP_MAX_AGE_HOURS}h para uploads/shared, cache habilitado: {getattr(config, 'CLEANUP_CACHE_ENABLED', True)}")
+    # CKDEV-NOTE: Cleanup scheduler configured silently
     
     scheduler.start()
     

@@ -32,7 +32,7 @@ def create_document_controller(
     def process_documents():
         """Process uploaded documents and extract data"""
         try:
-            logger.info("Document processing request received", extra=RequestHelper.log_request_info("process"))
+            # CKDEV-NOTE: Document processing request received
             
             files = request.files.getlist('files')
             template_type = request.form.get('template', 'pagamento_terceiro')
@@ -47,7 +47,7 @@ def create_document_controller(
                 upload_results = file_service.upload_files(files)
                 file_paths = [result['file_path'] for result in upload_results]
                 main_pdf_path = file_paths[0]
-                logger.info(f"File uploaded successfully: {main_pdf_path}")
+                # CKDEV-NOTE: File upload successful
             except Exception as upload_error:
                 logger.error(f"File upload failed: {upload_error}")
                 return ResponseBuilder.error(f"File upload failed: {str(upload_error)}"), 400
@@ -58,7 +58,7 @@ def create_document_controller(
                 backend_root = Path(__file__).parent.parent.parent
                 if str(backend_root) not in sys.path:
                     sys.path.insert(0, str(backend_root))
-                logger.info(f"Backend root: {backend_root}")
+                # CKDEV-NOTE: Backend root path configured
             except Exception as path_error:
                 logger.error(f"Path setup failed: {path_error}")
                 return ResponseBuilder.error(f"Path setup failed: {str(path_error)}"), 500
@@ -66,14 +66,15 @@ def create_document_controller(
             try:
                 from extractors import PDFDataExtractor
                 pdf_extractor = PDFDataExtractor()
-                logger.info("PDF Extractor initialized successfully")
+                # CKDEV-NOTE: PDF Extractor initialized
             except Exception as extractor_error:
                 logger.error(f"Extractor initialization failed: {extractor_error}")
                 return ResponseBuilder.error(f"Extractor init failed: {str(extractor_error)}"), 500
             
             try:
                 extracted_data = pdf_extractor.extract_data(main_pdf_path)
-                logger.info("Data extraction completed successfully")
+                # CKDEV-NOTE: Data extraction completed
+                # CKDEV-NOTE: Data extraction completed - vehicle data available
             except Exception as extraction_error:
                 logger.error(f"Data extraction failed: {extraction_error}")
                 import traceback
@@ -176,6 +177,8 @@ def create_document_controller(
                 extracted_data, TemplateType(template_type)
             )
             
+            # CKDEV-NOTE: Data validation completed - proceeding to serialization
+            
             validation_dict = {
                 key: result.to_dict() for key, result in validation_results.items()
             }
@@ -240,51 +243,45 @@ def create_document_controller(
             import traceback
             full_traceback = traceback.format_exc()
             logger.error(f"Full traceback: {full_traceback}")
-            # CKDEV-NOTE: Temporary detailed error for debugging - remove in production
+            # CKDEV-NOTE: Detailed error logging for critical failures
             return ResponseBuilder.error(f"Processing error: {str(e)} | Traceback: {full_traceback[:500]}"), 500
     
     @bp.route('/generate/<session_id>', methods=['POST'])
     def generate_document(session_id):
         """Generate document from extracted data"""
         try:
-            logger.info(f"Document generation requested: {session_id}", extra=RequestHelper.log_request_info("generate"))
+            # CKDEV-NOTE: Document generation requested
             
-            # CKDEV-NOTE: Add detailed logging for debugging
-            logger.info(f"Request JSON: {request.json}")
+            # CKDEV-NOTE: Request data received for document generation
             
             schema = TemplateGenerationSchema()
             try:
                 data = schema.load(request.json or {})
-                logger.info(f"Schema loaded successfully: {data}")
+                # CKDEV-NOTE: Schema validation successful
             except MarshmallowValidationError as e:
                 logger.error(f"Schema validation failed: {e.messages}")
                 return ResponseBuilder.validation_error(e.messages), 400
             
-            logger.info(f"Retrieving session: {session_id}")
+            # CKDEV-NOTE: Session retrieval initiated
             
-            # CKDEV-NOTE: Add detailed session debugging before retrieval
-            logger.info(f"Session service max_age_hours: {session_service.max_age_hours}")
-            logger.info(f"Current session count: {session_service.get_session_count()}")
+            # CKDEV-NOTE: Session retrieval initiated
             
             session = session_service.get_session(session_id)
-            logger.info(f"Session retrieved successfully: timestamp={session.timestamp}, template={session.template_type.value}")
+            # CKDEV-NOTE: Session retrieved successfully
             
-            logger.info("Generating real document...")
+            # CKDEV-NOTE: Document generation started
             output_filename = _generate_real_document(session, data.get('format_type', 'docx'))
-            logger.info(f"Document generated: {output_filename}")
+            # CKDEV-NOTE: Document generated successfully
             
             formats_available = ['docx']
             pdf_filename = None
             
             # CKDEV-NOTE: Enhanced PDF generation with comprehensive validation
             try:
-                logger.info(f"Attempting PDF conversion from: {output_filename}")
+                # CKDEV-NOTE: PDF conversion initiated
                 
-                # CKDEV-NOTE: Ensure the output directory exists and is accessible
+                # CKDEV-NOTE: Output directory validation
                 output_dir = output_filename.parent
-                logger.info(f"Output directory: {output_dir}")
-                logger.info(f"Output directory exists: {output_dir.exists()}")
-                logger.info(f"Output directory contents: {list(output_dir.iterdir()) if output_dir.exists() else 'Directory not found'}")
                 
                 pdf_path = pdf_service.convert_docx_to_pdf(output_filename)
                 
@@ -292,7 +289,7 @@ def create_document_controller(
                 if pdf_path and _validate_pdf_file(pdf_path, logger):
                     pdf_filename = pdf_path.name
                     formats_available.append('pdf')
-                    logger.info(f"PDF generated and validated successfully: {pdf_filename} ({pdf_path.stat().st_size} bytes)")
+                    # CKDEV-NOTE: PDF generated and validated successfully
                     
                     # CKDEV-NOTE: Verify PDF file is actually accessible for download
                     try:
@@ -302,7 +299,7 @@ def create_document_controller(
                         
                         # Test if the PDF can be accessed through the file service
                         test_path = file_service.get_file(pdf_filename, 'output')
-                        logger.info(f"PDF file accessible through FileService: {test_path}")
+                        # CKDEV-NOTE: PDF file accessibility verified
                         
                     except Exception as access_error:
                         logger.error(f"PDF file not accessible through FileService: {access_error}")
@@ -316,12 +313,12 @@ def create_document_controller(
                     if pdf_path and pdf_path.exists():
                         try:
                             pdf_path.unlink()
-                            logger.info(f"Removed invalid PDF file: {pdf_path.name}")
+                            # CKDEV-NOTE: Invalid PDF file removed
                         except Exception as cleanup_error:
                             logger.error(f"Failed to cleanup invalid PDF: {cleanup_error}")
             except Exception as e:
                 logger.error(f"PDF conversion failed during generation: {e}", exc_info=True)
-                logger.info(f"Document generation will continue with DOCX only: {output_filename.name}")
+                # CKDEV-NOTE: Document generation continues with DOCX only
             
             config = get_config()
             api_base_url = config.API_BASE_URL
@@ -341,7 +338,7 @@ def create_document_controller(
             else:
                 response_data["pdf_filename"] = None
                 response_data["pdf_download_url"] = None
-                logger.info("PDF not available - not including PDF download information in response")
+                # CKDEV-NOTE: PDF not available for download
             
             logger.info(f"Returning response: {response_data}")
             

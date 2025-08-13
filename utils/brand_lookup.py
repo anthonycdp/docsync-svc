@@ -43,9 +43,6 @@ class BrandLookup:
                     
                     if marca and modelo:
                         self.model_to_brand[modelo] = marca
-                        first_word = modelo.split()[0] if modelo.split() else ""
-                        if first_word and len(first_word) > 2:
-                            self.model_to_brand[first_word] = marca
         except Exception:
             pass
     
@@ -79,10 +76,10 @@ class BrandLookup:
                         return self.model_to_brand[word_with_hyphen]
         
         for csv_model, brand in self.model_to_brand.items():
-            if model_clean.startswith(csv_model) or csv_model.startswith(model_clean[:10]):
+            if model_clean == csv_model or (len(model_clean) > 5 and model_clean.startswith(csv_model)):
                 return brand
             for word in words:
-                if len(word) >= 3 and (csv_model.startswith(word) or word.startswith(csv_model)):
+                if len(word) >= 4 and csv_model == word:
                     return brand
         
         for csv_model, brand in self.model_to_brand.items():
@@ -94,7 +91,7 @@ class BrandLookup:
                         return brand
             
             for word in words:
-                if len(word) > 3 and word in csv_model:
+                if len(word) >= 4 and csv_model == word:
                     return brand
         
         return None
@@ -113,7 +110,8 @@ class BrandLookup:
         return cleaned
     
     def get_fallback_brand(self, model: str) -> str:
-        return self.get_brand_from_model(model) or ""
+        result = self.get_brand_from_model(model)
+        return result if result else ""
 
 _brand_lookup_instance = None
 

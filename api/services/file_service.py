@@ -26,12 +26,8 @@ class FileService:
         FileManager.ensure_directory(self.upload_dir)
         FileManager.ensure_directory(self.output_dir)
         
-        # CKDEV-NOTE: Log the actual paths being used for debugging
-        self.logger.info(f"FileService initialized with upload_dir: {self.upload_dir}")
-        self.logger.info(f"FileService initialized with output_dir: {self.output_dir}")
-        self.logger.info(f"Output directory exists: {self.output_dir.exists()}")
-        if self.output_dir.exists():
-            self.logger.info(f"Output directory contents: {list(self.output_dir.iterdir())}")
+        # CKDEV-NOTE: No logging during initialization to reduce noise
+        # Only log errors when they occur
     
     def upload_files(self, files: List[FileStorage]) -> List[Dict[str, Any]]:
         if not files:
@@ -50,14 +46,8 @@ class FileService:
             if not results:
                 raise ValidationError("No valid files found")
             
-            self.logger.info(
-                f"Successfully uploaded {len(results)} files",
-                extra={
-                    "file_count": len(results),
-                    "total_size": sum(r['size'] for r in results),
-                    "file_types": [r['content_type'] for r in results]
-                }
-            )
+            # CKDEV-NOTE: No logging for successful operations to reduce noise
+            # Only log errors when they occur
             
             return results
             
@@ -134,7 +124,7 @@ class FileService:
         for file_path in file_paths:
             try:
                 Path(file_path).unlink()
-                self.logger.info(f"Cleaned up file: {file_path}")
+                # CKDEV-NOTE: No logging for cleanup operations to reduce noise
             except Exception as e:
                 self.logger.warning(f"Failed to cleanup file {file_path}: {e}")
     
@@ -153,16 +143,12 @@ class FileService:
         
         file_path = base_dir / filename
         
-        # CKDEV-NOTE: Enhanced logging for debugging file access
-        self.logger.info(f"Looking for file: {filename} in directory: {directory}")
-        self.logger.info(f"Full file path: {file_path}")
-        self.logger.info(f"File exists: {file_path.exists()}")
+        # CKDEV-NOTE: No logging for successful file access to reduce noise
+        # Only log errors when they occur
         
         if not file_path.exists():
-            # CKDEV-NOTE: List directory contents for debugging
             if base_dir.exists():
-                available_files = list(base_dir.iterdir())
-                self.logger.warning(f"File not found: {filename}. Available files in {directory}: {[f.name for f in available_files]}")
+                self.logger.warning(f"File not found: {filename} in {directory}")
             else:
                 self.logger.error(f"Base directory does not exist: {base_dir}")
             
@@ -173,7 +159,6 @@ class FileService:
         if not str(file_path.resolve()).startswith(str(base_dir.resolve())):
             raise SecurityError(f"Path traversal attempt: {filename}")
         
-        self.logger.info(f"File found successfully: {file_path}")
         return file_path
     
     def delete_file(self, filename: str, directory: str = "upload") -> bool:
@@ -182,7 +167,7 @@ class FileService:
             file_path.unlink()
             
             log_file_operation("delete", str(file_path), True)
-            self.logger.info(f"File deleted: {filename}")
+            # CKDEV-NOTE: No logging for successful delete operations to reduce noise
             return True
             
         except Exception as e:
@@ -195,8 +180,8 @@ class FileService:
         # CKDEV-NOTE: Limpeza da pasta uploads (arquivos temporários de upload)
         cleaned_count += FileManager.clean_temporary_files(self.upload_dir, max_age_hours)
         
-        # CKDEV-NOTE: Limpeza da pasta output com retenção maior (7x o tempo padrão)
-        cleaned_count += FileManager.clean_temporary_files(self.output_dir, max_age_hours * 7)
+        # CKDEV-NOTE: Limpeza da pasta output (mesmo tempo padrão de 24h)
+        cleaned_count += FileManager.clean_temporary_files(self.output_dir, max_age_hours)
         
         # CKDEV-NOTE: Limpeza das pastas de cache e sessões (se habilitado)
         if getattr(self.config, 'CLEANUP_CACHE_ENABLED', True):
@@ -206,8 +191,8 @@ class FileService:
         if getattr(self.config, 'CLEANUP_SHARED_OUTPUT_ENABLED', True):
             cleaned_count += self._cleanup_shared_output_directory(max_age_hours)
         
-        if cleaned_count > 0:
-            self.logger.info(f"Cleaned up {cleaned_count} temporary files from all directories")
+        # CKDEV-NOTE: No logging for successful cleanup operations to reduce noise
+        # Only log errors when they occur
         
         return cleaned_count
     
@@ -220,7 +205,7 @@ class FileService:
             session_dir = Path(self.config.SESSION_FILE_DIR)
             if session_dir.exists():
                 cleaned_count += FileManager.clean_temporary_files(session_dir, max_age_hours)
-                self.logger.debug(f"Cleaned session directory: {session_dir}")
+                # CKDEV-NOTE: No logging for successful cleanup operations
             
             # CKDEV-NOTE: Limpeza da pasta de logs (apenas arquivos .log antigos)
             log_dir = Path(self.config.LOG_DIR)
@@ -228,7 +213,7 @@ class FileService:
                 # CKDEV-NOTE: Logs mantidos por mais tempo (configurável via CLEANUP_LOG_RETENTION_MULTIPLIER)
                 log_retention_multiplier = getattr(self.config, 'CLEANUP_LOG_RETENTION_MULTIPLIER', 3)
                 cleaned_count += self._cleanup_log_files(log_dir, max_age_hours * log_retention_multiplier)
-                self.logger.debug(f"Cleaned log directory: {log_dir}")
+                # CKDEV-NOTE: No logging for successful cleanup operations
                 
         except Exception as e:
             self.logger.error(f"Error cleaning cache directories: {e}")
@@ -246,7 +231,7 @@ class FileService:
             
             if shared_output_path.exists() and shared_output_path.is_dir():
                 cleaned_count += FileManager.clean_temporary_files(shared_output_path, max_age_hours)
-                self.logger.debug(f"Cleaned shared output directory: {shared_output_path}")
+                # CKDEV-NOTE: No logging for successful cleanup operations
             else:
                 self.logger.warning(f"Shared output directory not found or not accessible: {shared_output_path}")
                 
@@ -270,7 +255,7 @@ class FileService:
                     if file_age > max_age_seconds:
                         log_file.unlink()
                         cleaned_count += 1
-                        self.logger.debug(f"Removed old log file: {log_file}")
+                        # CKDEV-NOTE: No logging for successful log file cleanup
                         
         except Exception as e:
             self.logger.error(f"Error cleaning log files: {e}")

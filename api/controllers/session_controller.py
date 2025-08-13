@@ -16,7 +16,7 @@ def create_session_controller(session_service: SessionService) -> Blueprint:
     @bp.route('/<session_id>', methods=['GET'])
     def get_session_data(session_id):
         try:
-            logger.info(f"Session data requested: {session_id}", extra=RequestHelper.log_request_info("get_session"))
+            # CKDEV-NOTE: Session data requested
             
             session = session_service.get_session(session_id)
             
@@ -44,7 +44,7 @@ def create_session_controller(session_service: SessionService) -> Blueprint:
     @bp.route('/<session_id>', methods=['PATCH'])
     def update_session_data(session_id):
         try:
-            logger.info(f"Session update requested: {session_id}", extra=RequestHelper.log_request_info("update_session"))
+            # CKDEV-NOTE: Session update requested
             
             schema = SessionUpdateSchema()
             try:
@@ -89,7 +89,7 @@ def create_session_controller(session_service: SessionService) -> Blueprint:
     @bp.route('/<session_id>', methods=['DELETE'])
     def delete_session(session_id):
         try:
-            logger.info(f"Session deletion requested: {session_id}", extra=RequestHelper.log_request_info("delete_session"))
+            # CKDEV-NOTE: Session deletion requested
             
             success = session_service.delete_session(session_id)
             

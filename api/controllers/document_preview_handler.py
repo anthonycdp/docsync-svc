@@ -160,7 +160,7 @@ class DocumentPreviewHandler:
             text = paragraph.text.strip()
             if text:
                 # Check if this is a location/date element (contains city name or date pattern)
-                if any(city in text.upper() for city in ['SÃO JOSÉ DOS CAMPOS', 'SÃO PAULO', 'CAMPINAS']) or ('{{' in text and ('DATA' in text.upper() or 'LOCAL' in text.upper())):
+                if any(city in text.upper() for city in ['CIDADE_EXEMPLO', 'OUTRA_CIDADE', 'MAIS_UMA_CIDADE']) or ('{{' in text and ('DATA' in text.upper() or 'LOCAL' in text.upper())):
                     # Store for rendering at the end
                     location_date_elements.append(text)
                 else:

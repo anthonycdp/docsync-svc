@@ -1,5 +1,6 @@
 import os
 import subprocess
+import platform
 from pathlib import Path
 from typing import Tuple, Optional
 import logging
@@ -8,6 +9,74 @@ logger = logging.getLogger(__name__)
 
 CONVERSION_TIMEOUT = 90  # seconds
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
+
+def get_libreoffice_command() -> Optional[str]:
+    """
+    Auto-detect LibreOffice executable path based on operating system.
+    
+    Returns:
+        str: Path to LibreOffice executable or None if not found
+    """
+    system = platform.system().lower()
+    
+    if system == "windows":
+        # CKDEV-NOTE: Windows-specific LibreOffice detection with common paths
+        possible_paths = [
+            "soffice.exe",  # If in PATH
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            r"C:\Program Files\LibreOffice 7.6\program\soffice.exe",
+            r"C:\Program Files\LibreOffice 7.5\program\soffice.exe",
+            r"C:\Program Files\LibreOffice 7.4\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice 7.6\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice 7.5\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice 7.4\program\soffice.exe"
+        ]
+        
+        for path in possible_paths:
+            try:
+                if path == "soffice.exe":
+                    # Test if in PATH
+                    result = subprocess.run(
+                        ["where", "soffice.exe"], 
+                        capture_output=True, 
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        return "soffice.exe"
+                else:
+                    if os.path.exists(path):
+                        return path
+            except Exception:
+                continue
+                
+    elif system in ["linux", "darwin"]:
+        # CKDEV-NOTE: Unix-like systems typically use 'libreoffice' command
+        try:
+            result = subprocess.run(
+                ["which", "libreoffice"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return "libreoffice"
+        except Exception:
+            pass
+            
+        # Fallback paths for Unix systems
+        possible_paths = [
+            "/usr/bin/libreoffice",
+            "/usr/local/bin/libreoffice",
+            "/opt/libreoffice/program/soffice"
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+    
+    return None
 
 def convert_docx_to_pdf(
     docx_path: str, 
@@ -36,9 +105,14 @@ def convert_docx_to_pdf(
     output_dir = str(Path(pdf_path).parent)
     input_path = Path(docx_path)
     
-    # CKDEV-NOTE: Simplified LibreOffice command for Render deployment
+    # CKDEV-NOTE: Auto-detect LibreOffice executable for cross-platform support
+    libreoffice_cmd = get_libreoffice_command()
+    
+    if not libreoffice_cmd:
+        return False, "LibreOffice not found. Please install LibreOffice.", None
+    
     cmd = [
-        'libreoffice',
+        libreoffice_cmd,
         '--headless',
         '--nologo',
         '--nodefault',
@@ -58,8 +132,12 @@ def convert_docx_to_pdf(
             timeout=CONVERSION_TIMEOUT
         )
         
+        logger.info(f"LibreOffice stdout: {result.stdout}")
+        logger.info(f"LibreOffice stderr: {result.stderr}")
+        logger.info(f"LibreOffice return code: {result.returncode}")
+        
         if result.returncode != 0:
-            error_msg = f"LibreOffice conversion failed: {result.stderr}"
+            error_msg = f"LibreOffice conversion failed (code {result.returncode}): {result.stderr}"
             logger.error(error_msg)
             return False, error_msg, None
         

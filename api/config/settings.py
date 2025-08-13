@@ -20,7 +20,9 @@ class Config:
     JWT_REFRESH_TOKEN_EXPIRES: timedelta = timedelta(days=30)
     
     CORS_ORIGINS: List[str] = [
-        "https://doc-sync-original.netlify.app"
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://[::1]:3000"
     ]
     CORS_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     CORS_ALLOW_HEADERS: List[str] = ["Content-Type", "Authorization"]
@@ -51,7 +53,7 @@ class Config:
     RATELIMIT_DEFAULT: str = "100 per hour"
     RATELIMIT_HEADERS_ENABLED: bool = True
     
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "ERROR")  # CKDEV-NOTE: Changed default from INFO to ERROR
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     LOG_DIR: Path = Path.home() / "tmp" / "doc-sync" / "logs"
     LOG_FILE: str = "app.log"
@@ -63,7 +65,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
     
     # CKDEV-NOTE: API base URL for generating download URLs
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "https://doc-sync-service.onrender.com")
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
     
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
@@ -104,8 +106,8 @@ class Config:
 
 class DevelopmentConfig(Config):
     ENV = "Development"
-    DEBUG = True
-    LOG_LEVEL = "DEBUG"
+    DEBUG = False  # CKDEV-NOTE: Disabled debug mode to reduce log noise
+    LOG_LEVEL = "ERROR"  # CKDEV-NOTE: Changed from DEBUG to ERROR to keep only critical logs
     LOG_FORMAT_CONSOLE = "%(asctime)s - %(levelname)s - %(message)s"
     SESSION_COOKIE_SECURE = False
     RATELIMIT_ENABLED = False
@@ -134,10 +136,10 @@ class ProductionConfig(Config):
     
     RATELIMIT_DEFAULT = "50 per hour"
     
-    LOG_LEVEL = "WARNING"
+    LOG_LEVEL = "ERROR"  # CKDEV-NOTE: Changed from WARNING to ERROR for critical logs only
     
     # CKDEV-NOTE: Production API base URL
-    API_BASE_URL = os.getenv("API_BASE_URL", "https://doc-sync-service.onrender.com")
+    API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
 
 
 config = {

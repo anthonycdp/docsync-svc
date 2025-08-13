@@ -17,7 +17,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
     @bp.route('/upload', methods=['POST'])
     def upload_files():
         try:
-            logger.info("File upload request received", extra=RequestHelper.log_request_info("upload"))
+            # CKDEV-NOTE: File upload request received
             
             files = request.files.getlist('files')
             if not files:
@@ -56,7 +56,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
             return response
         
         try:
-            logger.info(f"File download requested: {filename}", extra=RequestHelper.log_request_info("download"))
+            # CKDEV-NOTE: File download requested
             
             directory = request.args.get('dir', 'output')
             # CKDEV-NOTE: Accept both 'upload'/'uploads' for backward compatibility
@@ -106,7 +106,7 @@ def create_file_controller(file_service: FileService, pdf_service: PDFConversion
                             logger.warning(f"Malformed PDF first line in file: {filename}")
                             return ResponseBuilder.error("Malformed PDF file"), 404
                     
-                    logger.info(f"PDF validation successful: {filename} ({file_size} bytes)")
+                    # CKDEV-NOTE: PDF validation successful
                 except Exception as e:
                     logger.error(f"PDF validation failed for {filename}: {e}")
                     return ResponseBuilder.error("PDF file validation failed"), 500
